@@ -1,1 +1,2 @@
 util/zenfs
+fs/*.o
