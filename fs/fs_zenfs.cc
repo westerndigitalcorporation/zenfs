@@ -466,6 +466,13 @@ IOStatus ZenFS::NewWritableFile(const std::string& fname,
 
   zoneFile = new ZoneFile(zbd_, fname, next_file_id_++);
 
+  /* Persist the creation of the file */
+  s = SyncFileMetadata(zoneFile);
+  if(!s.ok()) {
+    delete zoneFile;
+    return s;
+  }
+
   files_mtx_.lock();
   files_.insert(std::make_pair(fname.c_str(), zoneFile));
   files_mtx_.unlock();
