@@ -112,12 +112,18 @@ void list_children(ZenFS *zenFS, std::string path) {
   IOOptions opts;
   IODebugContext dbg;
   std::vector<std::string> result;
+  uint64_t size;
   IOStatus io_status = zenFS->GetChildren(path, opts, &result, &dbg);
 
   if (!io_status.ok()) return;
 
   for (const auto f : result) {
-    fprintf(stdout, "%s\n", f.c_str());
+    io_status = zenFS->GetFileSize(path + "/" + f, opts, &size, &dbg);
+    if (!io_status.ok()) {
+      fprintf(stderr, "Failed to get size of file %s\n", f.c_str());
+      return;
+    }
+    fprintf(stdout, "%12lu\t%-32s\n", size, f.c_str());
   }
 }
 
