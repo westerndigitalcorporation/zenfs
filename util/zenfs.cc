@@ -99,6 +99,8 @@ int zenfs_tool_mkfs() {
     return 1;
   }
 
+  fprintf(stdout, "INFO: For ZBD %s, device scheduler is set to mq-deadline.\n",
+          FLAGS_zbd.c_str());
   fprintf(stdout, "ZenFS file system created. Free space: %lu MB\n",
           zbd->GetFreeSpace() / (1024 * 1024));
 

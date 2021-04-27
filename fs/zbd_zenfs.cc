@@ -19,6 +19,8 @@
 #include <unistd.h>
 
 #include <string>
+#include <sstream>
+#include <fstream>
 #include <utility>
 #include <vector>
 
@@ -175,6 +177,26 @@ std::string ZonedBlockDevice::ErrorToString(int err) {
   return "";
 }
 
+IOStatus ZonedBlockDevice::SetScheduler() {
+  std::ostringstream path;
+  std::string s = filename_;
+  std::fstream f;
+
+  s.erase(0, 5); // Remove "/dev/" from /dev/nvmeXnY
+  path << "/sys/block/" << s << "/queue/scheduler";
+  f.open(path.str(), std::fstream::in | std::fstream::out);
+  if (!f.is_open()) {
+    return IOStatus::InvalidArgument("Failed to open " + path.str());
+  }
+  f.write("mq-deadline", 11);
+  if (f.fail()) {
+    f.close();
+    return IOStatus::InvalidArgument("Failed to set scheduler to mq-deadline");
+  }
+  f.close();
+  return IOStatus::OK();
+}
+
 IOStatus ZonedBlockDevice::Open(bool readonly) {
   struct zbd_zone *zone_rep;
   unsigned int reported_zones;
@@ -212,6 +234,10 @@ IOStatus ZonedBlockDevice::Open(bool readonly) {
     return IOStatus::NotSupported(
         "To few zones on zoned block device (32 required)");
   }
+
+  IOStatus ios = SetScheduler();
+  if (ios != IOStatus::OK())
+    return ios;
 
   block_sz_ = info.pblock_size;
   zone_sz_ = info.zone_size;

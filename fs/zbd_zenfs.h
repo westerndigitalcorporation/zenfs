@@ -87,6 +87,7 @@ class ZonedBlockDevice {
   virtual ~ZonedBlockDevice();
 
   IOStatus Open(bool readonly = false);
+  IOStatus SetScheduler();
 
   Zone *GetIOZone(uint64_t offset);
 
