@@ -477,7 +477,7 @@ IOStatus ZenFS::NewWritableFile(const std::string& fname,
   files_.insert(std::make_pair(fname.c_str(), zoneFile));
   files_mtx_.unlock();
 
-  result->reset(new ZonedWritableFile(zbd_, true, zoneFile, &metadata_writer_));
+  result->reset(new ZonedWritableFile(zbd_, !file_opts.use_direct_writes, zoneFile, &metadata_writer_));
 
   return s;
 }
