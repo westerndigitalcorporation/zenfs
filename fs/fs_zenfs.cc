@@ -103,7 +103,7 @@ IOStatus ZenMetaLog::AddRecord(const Slice& slice) {
   assert(data != nullptr);
   assert((phys_sz % bs_) == 0);
 
-  ret = posix_memalign((void**)&buffer, bs_, phys_sz);
+  ret = posix_memalign((void**)&buffer, sysconf(_SC_PAGESIZE), phys_sz);
   if (ret) return IOStatus::IOError("Failed to allocate memory");
 
   memset(buffer, 0, phys_sz);
