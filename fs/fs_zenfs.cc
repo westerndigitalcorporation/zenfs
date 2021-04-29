@@ -751,8 +751,11 @@ Status ZenFS::RecoverFrom(ZenMetaLog* log) {
 
     if (!GetFixed32(&record, &tag)) break;
 
-    if (!GetLengthPrefixedSlice(&record, &data))
+    if (tag == kEndRecord) break;
+
+    if (!GetLengthPrefixedSlice(&record, &data)) {
       return Status::Corruption("ZenFS", "No recovery record data");
+    }
 
     switch (tag) {
       case kCompleteFilesSnapshot:
@@ -782,10 +785,6 @@ Status ZenFS::RecoverFrom(ZenMetaLog* log) {
                s.ToString().c_str());
           return s;
         }
-        break;
-
-      case kEndRecord:
-        done = true;
         break;
 
       default:
