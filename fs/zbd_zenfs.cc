@@ -212,7 +212,7 @@ IOStatus ZonedBlockDevice::Open(bool readonly) {
     return IOStatus::InvalidArgument("Failed to open zoned block device: " + ErrorToString(errno));
   }
 
-  read_direct_f_ = zbd_open(filename_.c_str(), O_RDONLY, &info);
+  read_direct_f_ = zbd_open(filename_.c_str(), O_RDONLY | O_DIRECT, &info);
   if (read_f_ < 0) {
     return IOStatus::InvalidArgument("Failed to open zoned block device: " + ErrorToString(errno));
   }

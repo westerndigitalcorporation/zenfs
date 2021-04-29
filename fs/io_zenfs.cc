@@ -250,7 +250,11 @@ IOStatus ZoneFile::PositionedRead(uint64_t offset, size_t n, Slice* result,
 
     if ((pread_sz + r_off) > extent_end) pread_sz = extent_end - r_off;
 
-    if (direct) {
+    /* We may get some unaligned direct reads due to non-aligned extent lengths, so
+     * fall back on non-direct-io in that case.
+     */
+    bool aligned = (pread_sz % zbd_->GetBlockSize() == 0);
+    if (direct && aligned) {
       r = pread(f_direct, ptr, pread_sz, r_off);
     } else {
       r = pread(f, ptr, pread_sz, r_off);
