@@ -9,19 +9,21 @@ OK_TESTS=0
 FAILED_TESTS=0
 
 export TOOLS_DIR="../../../"
+export ZENFS_DIR="../util/"
 
 RESULT_PATH="results/$NAME"
 RESULT_DIR="results/$NAME/$TEST_DIR"
 
 mkdir -p $RESULT_DIR
-rm -rf "$RESULT_DIR/*"
+rm -rf $RESULT_DIR/*
 
 for TEST in $TESTS
 do
   TESTCASE="$TEST"
   echo "$(tput setaf 3)Running $TEST $(tput sgr 0)"
   
-  export TEST_OUT="$RESULT_PATH/${TEST//sh/out}"
+  export RESULT_DIR="$RESULT_DIR"
+  export TEST_OUT="$RESULT_PATH/${TEST/sh/out}"
   TEST_RES=$($TESTCASE)
   RES=$?
   echo ""
