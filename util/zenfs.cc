@@ -26,6 +26,7 @@ DEFINE_string(aux_path, "",
 DEFINE_bool(force, false, "Force file system creation.");
 DEFINE_string(path, "", "File path");
 DEFINE_int32(finish_threshold, 0, "Finish used zones if less than x% left");
+DEFINE_string(restore_path, "", "Path to restore files");
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -347,6 +348,11 @@ int zenfs_tool_restore() {
   ZonedBlockDevice *zbd;
   ZenFS *zenFS;
 
+  if (FLAGS_restore_path.empty()) {
+    fprintf(stderr, "Error: Specify --restore_path=<db path> to restore the db\n");
+    return 1;
+  }
+
   ReadWriteLifeTimeHints();
 
   zbd = zbd_open(false);
@@ -359,7 +365,7 @@ int zenfs_tool_restore() {
     return 1;
   }
   
-  io_status = zenfs_tool_copy_dir(FileSystem::Default().get(), FLAGS_path, zenFS, "");
+  io_status = zenfs_tool_copy_dir(FileSystem::Default().get(), FLAGS_path, zenFS, FLAGS_restore_path);
   if (!io_status.ok()) {
     fprintf(stderr, "Copy failed, error: %s\n", io_status.ToString().c_str());
     return 1;
