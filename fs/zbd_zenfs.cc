@@ -177,22 +177,25 @@ std::string ZonedBlockDevice::ErrorToString(int err) {
   return "";
 }
 
-IOStatus ZonedBlockDevice::SetScheduler() {
+IOStatus ZonedBlockDevice::CheckScheduler() {
   std::ostringstream path;
   std::string s = filename_;
   std::fstream f;
 
   s.erase(0, 5); // Remove "/dev/" from /dev/nvmeXnY
   path << "/sys/block/" << s << "/queue/scheduler";
-  f.open(path.str(), std::fstream::in | std::fstream::out);
+  f.open(path.str(), std::fstream::in);
   if (!f.is_open()) {
     return IOStatus::InvalidArgument("Failed to open " + path.str());
   }
-  f.write("mq-deadline", 11);
-  if (f.fail()) {
+
+  std::string buf;
+  getline(f, buf);
+  if (buf.find("[mq-deadline]") == std::string::npos) {
     f.close();
-    return IOStatus::InvalidArgument("Failed to set scheduler to mq-deadline");
+    return IOStatus::InvalidArgument("Current ZBD scheduler is not mq-deadline, set it to mq-deadline.");
   }
+
   f.close();
   return IOStatus::OK();
 }
@@ -235,7 +238,7 @@ IOStatus ZonedBlockDevice::Open(bool readonly) {
         "To few zones on zoned block device (32 required)");
   }
 
-  IOStatus ios = SetScheduler();
+  IOStatus ios = CheckScheduler();
   if (ios != IOStatus::OK())
     return ios;
 
