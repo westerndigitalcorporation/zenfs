@@ -49,6 +49,7 @@ enum ZoneFileTag : uint32_t {
   kFileSize = 3,
   kWriteLifeTimeHint = 4,
   kExtent = 5,
+  kModificationTime = 6,
 };
 
 void ZoneFile::EncodeTo(std::string* output, uint32_t extent_start) {
@@ -72,6 +73,8 @@ void ZoneFile::EncodeTo(std::string* output, uint32_t extent_start) {
     PutLengthPrefixedSlice(output, Slice(extent_str));
   }
 
+  PutFixed32(output, kModificationTime);
+  PutFixed64(output, (uint64_t)m_time_);
   /* We're not encoding active zone and extent start
    * as files will always be read-only after mount */
 }
@@ -122,6 +125,12 @@ Status ZoneFile::DecodeFrom(Slice* input) {
         extent->zone_->used_capacity_ += extent->length_;
         extents_.push_back(extent);
         break;
+      case kModificationTime:
+        uint64_t ct;
+        if (!GetFixed64(input, &ct))
+          return Status::Corruption("ZoneFile", "Missing creation time");
+        m_time_ = (time_t)ct;
+        break;
       default:
         return Status::Corruption("ZoneFile", "Unexpected tag");
     }
@@ -138,6 +147,7 @@ Status ZoneFile::MergeUpdate(ZoneFile* update) {
   Rename(update->GetFilename());
   SetFileSize(update->GetFileSize());
   SetWriteLifeTimeHint(update->GetWriteLifeTimeHint());
+  SetFileModificationTime(update->GetFileModificationTime());
 
   std::vector<ZoneExtent*> update_extents = update->GetExtents();
   for (long unsigned int i = 0; i < update_extents.size(); i++) {
@@ -162,14 +172,16 @@ ZoneFile::ZoneFile(ZonedBlockDevice* zbd, std::string filename,
       fileSize(0),
       filename_(filename),
       file_id_(file_id),
-      nr_synced_extents_(0) {}
+      nr_synced_extents_(0),
+      m_time_(0) {}
 
 std::string ZoneFile::GetFilename() { return filename_; }
-
 void ZoneFile::Rename(std::string name) { filename_ = name; }
+time_t ZoneFile::GetFileModificationTime() { return m_time_; }
 
 uint64_t ZoneFile::GetFileSize() { return fileSize; }
 void ZoneFile::SetFileSize(uint64_t sz) { fileSize = sz; }
+void ZoneFile::SetFileModificationTime(time_t mt) { m_time_ = mt; }
 
 ZoneFile::~ZoneFile() {
   for (auto e = std::begin(extents_); e != std::end(extents_); ++e) {

@@ -366,6 +366,7 @@ IOStatus ZenFS::SyncFileMetadata(ZoneFile* zoneFile) {
 
   files_mtx_.lock();
 
+  zoneFile->SetFileModificationTime(time(0));
   PutFixed32(&output, kFileUpdate);
   zoneFile->EncodeUpdateTo(&fileRecord);
   PutLengthPrefixedSlice(&output, Slice(fileRecord));
@@ -465,6 +466,7 @@ IOStatus ZenFS::NewWritableFile(const std::string& fname,
   }
 
   zoneFile = new ZoneFile(zbd_, fname, next_file_id_++);
+  zoneFile->SetFileModificationTime(time(0));
 
   /* Persist the creation of the file */
   s = SyncFileMetadata(zoneFile);
@@ -572,6 +574,24 @@ IOStatus ZenFS::DeleteFile(const std::string& fname, const IOOptions& options,
   }
 
   return s;
+}
+
+IOStatus ZenFS::GetFileModificationTime(const std::string& f,
+                                        const IOOptions& options,
+                                        uint64_t* mtime, IODebugContext* dbg) {
+   ZoneFile* zoneFile;
+   IOStatus s;
+
+   Debug(logger_, "GetFileModificationTime: %s \n", f.c_str());
+   files_mtx_.lock();
+   if (files_.find(f) != files_.end()) {
+     zoneFile = files_[f];
+     *mtime = (uint64_t)zoneFile->GetFileModificationTime();
+   } else {
+     s = target()->GetFileModificationTime(ToAuxPath(f), options, mtime, dbg);
+   }
+   files_mtx_.unlock();
+   return s;
 }
 
 IOStatus ZenFS::GetFileSize(const std::string& f, const IOOptions& options,
