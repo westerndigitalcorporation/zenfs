@@ -124,7 +124,21 @@ void list_children(ZenFS *zenFS, std::string path) {
       fprintf(stderr, "Failed to get size of file %s\n", f.c_str());
       return;
     }
-    fprintf(stdout, "%12lu\t%-32s\n", size, f.c_str());
+    uint64_t mtime;
+    io_status = zenFS->GetFileModificationTime(path + "/" + f, opts, &mtime, &dbg);
+    if (!io_status.ok()) {
+      fprintf(stderr, "Failed to get modification time of file %s, error = %s\n",
+                                             f.c_str(), io_status.ToString().c_str());
+      return;
+    }
+    time_t mt = (time_t)mtime;
+    struct tm* fct = std::localtime(&mt);
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%b %d %Y %H:%M:%S", fct);
+    std::string mdtime;
+    mdtime.assign(buf, sizeof(buf));
+
+    fprintf(stdout, "%12lu\t%-32s%-32s\n", size, mdtime.c_str(), f.c_str());
   }
 }
 

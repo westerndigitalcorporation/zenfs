@@ -51,6 +51,7 @@ class ZoneFile {
 
   uint32_t nr_synced_extents_;
   bool open_for_wr_ = false;
+  time_t m_time_;
  public:
   explicit ZoneFile(ZonedBlockDevice* zbd, std::string filename,
                     uint64_t file_id_);
@@ -65,6 +66,8 @@ class ZoneFile {
   IOStatus SetWriteLifeTimeHint(Env::WriteLifeTimeHint lifetime);
   std::string GetFilename();
   void Rename(std::string name);
+  time_t GetFileModificationTime();
+  void SetFileModificationTime(time_t mt);
   uint64_t GetFileSize();
   void SetFileSize(uint64_t sz);
 

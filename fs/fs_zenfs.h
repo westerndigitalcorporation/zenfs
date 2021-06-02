@@ -216,6 +216,11 @@ class ZenFS : public FileSystemWrapper {
     return IOStatus::OK();
   }
 
+  IOStatus GetFileModificationTime(const std::string& fname,
+                                   const IOOptions& options,
+                                   uint64_t* mtime,
+                                   IODebugContext* dbg) override;
+
   // The directory structure is stored in the aux file system
 
   IOStatus IsDirectory(const std::string& path, const IOOptions& options,
@@ -314,14 +319,6 @@ class ZenFS : public FileSystemWrapper {
       std::unique_ptr<MemoryMappedFileBuffer>* /*result*/) override {
     return IOStatus::NotSupported(
         "MemoryMappedFileBuffer is not implemented in ZenFS");
-  }
-
-  IOStatus GetFileModificationTime(const std::string& /*fname*/,
-                                   const IOOptions& /*options*/,
-                                   uint64_t* /*file_mtime*/,
-                                   IODebugContext* /*dbg*/) override {
-    return IOStatus::NotSupported(
-        "GetFileModificationTime is not implemented in ZenFS");
   }
 
   virtual IOStatus LinkFile(const std::string& /*src*/,
