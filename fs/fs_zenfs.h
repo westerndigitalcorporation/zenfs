@@ -327,13 +327,13 @@ class ZenFS : public FileSystemWrapper {
   virtual IOStatus LinkFile(const std::string& /*src*/,
                             const std::string& /*target*/,
                             const IOOptions& /*options*/,
-                            IODebugContext* /*dbg*/) {
+                            IODebugContext* /*dbg*/) override {
     return IOStatus::NotSupported("LinkFile is not supported in ZenFS");
   }
 
   virtual IOStatus NumFileLinks(const std::string& /*fname*/,
                                 const IOOptions& /*options*/,
-                                uint64_t* /*count*/, IODebugContext* /*dbg*/) {
+                                uint64_t* /*count*/, IODebugContext* /*dbg*/) override {
     return IOStatus::NotSupported(
         "Getting number of file links is not supported in ZenFS");
   }
@@ -341,7 +341,7 @@ class ZenFS : public FileSystemWrapper {
   virtual IOStatus AreFilesSame(const std::string& /*first*/,
                                 const std::string& /*second*/,
                                 const IOOptions& /*options*/, bool* /*res*/,
-                                IODebugContext* /*dbg*/) {
+                                IODebugContext* /*dbg*/) override {
     return IOStatus::NotSupported("AreFilesSame is not supported in ZenFS");
   }
 };

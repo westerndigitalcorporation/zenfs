@@ -176,7 +176,7 @@ class ZonedSequentialFile : public FSSequentialFile {
   IOStatus PositionedRead(uint64_t offset, size_t n, const IOOptions& options,
                           Slice* result, char* scratch,
                           IODebugContext* dbg) override;
-  IOStatus Skip(uint64_t n);
+  IOStatus Skip(uint64_t n) override;
 
   bool use_direct_io() const override { return direct_; };
 

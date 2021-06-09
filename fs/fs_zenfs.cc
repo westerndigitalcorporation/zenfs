@@ -971,7 +971,7 @@ Status ZenFS::MkFS(std::string aux_fs_path, uint32_t finish_threshold) {
   super->EncodeTo(&super_string);
 
   s = log->AddRecord(super_string);
-  if (!s.ok()) return s;
+  if (!s.ok()) return std::move(s);
 
   /* Write an empty snapshot to make the metadata zone valid */
   s = PersistSnapshot(log.get());
