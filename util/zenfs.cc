@@ -118,7 +118,7 @@ void list_children(ZenFS *zenFS, std::string path) {
 
   if (!io_status.ok()) return;
 
-  for (const auto f : result) {
+  for (const auto& f : result) {
     io_status = zenFS->GetFileSize(path + "/" + f, opts, &size, &dbg);
     if (!io_status.ok()) {
       fprintf(stderr, "Failed to get size of file %s\n", f.c_str());
@@ -284,7 +284,7 @@ IOStatus zenfs_tool_copy_dir(FileSystem *f_fs, std::string f_dir, FileSystem *t_
   s = f_fs->GetChildren(f_dir, opts, &files, &dbg);
   if (!s.ok()) { return s; }
   
-  for (const auto f : files) {
+  for (const auto& f : files) {
     std::string filename = f_dir + f;
     bool is_dir;
 
