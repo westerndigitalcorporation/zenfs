@@ -529,7 +529,7 @@ IOStatus ZenFS::GetChildren(const std::string& dir, const IOOptions& options,
   Debug(logger_, "GetChildren: %s \n", dir.c_str());
 
   target()->GetChildren(ToAuxPath(dir), options, &auxfiles, dbg);
-  for (const auto f : auxfiles) {
+  for (const auto& f : auxfiles) {
     if (f != "." && f != "..") result->push_back(f);
   }
 
@@ -859,7 +859,7 @@ Status ZenFS::Mount(bool readonly) {
      If that fails go to the previous as we might have crashed when rolling
      metadata zone.
   */
-  for (const auto sm : seq_map) {
+  for (const auto& sm : seq_map) {
     uint32_t i = sm.second;
     std::string scratch;
     std::unique_ptr<ZenMetaLog> log = std::move(valid_logs[i]);
@@ -900,7 +900,7 @@ Status ZenFS::Mount(bool readonly) {
   }
 
   /* Free up old metadata zones, to get ready to roll */
-  for (const auto sm : seq_map) {
+  for (const auto& sm : seq_map) {
     uint32_t i = sm.second;
     /* Don't reset the current metadata zone */
     if (i != r) {
