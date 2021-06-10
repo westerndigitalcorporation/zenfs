@@ -61,7 +61,7 @@ class ZonedBlockDevice {
  private:
   std::string filename_;
   uint32_t block_sz_;
-  uint32_t zone_sz_;
+  uint64_t zone_sz_;
   uint32_t nr_zones_;
   std::vector<Zone *> io_zones;
   std::mutex io_zones_mtx;
@@ -109,7 +109,7 @@ class ZonedBlockDevice {
   int GetReadDirectFD() { return read_direct_f_; }
   int GetWriteFD() { return write_f_; }
 
-  uint32_t GetZoneSize() { return zone_sz_; }
+  uint64_t GetZoneSize() { return zone_sz_; }
   uint32_t GetNrZones() { return nr_zones_; }
   std::vector<Zone *> GetMetaZones() { return meta_zones; }
 
