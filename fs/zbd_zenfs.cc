@@ -74,17 +74,16 @@ void Zone::CloseWR() {
 
 IOStatus Zone::Reset() {
   size_t zone_sz = zbd_->GetZoneSize();
-  int fd = zbd_->GetWriteFD();
   unsigned int report = 1;
   struct zbd_zone z;
   int ret;
 
   assert(!IsUsed());
 
-  ret = zbd_reset_zones(fd, start_, zone_sz);
+  ret = zbd_reset_zones(zbd_->GetWriteFD(), start_, zone_sz);
   if (ret) return IOStatus::IOError("Zone reset failed\n");
 
-  ret = zbd_report_zones(fd, start_, zone_sz, ZBD_RO_ALL, &z, &report);
+  ret = zbd_report_zones(zbd_->GetReadFD(), start_, zone_sz, ZBD_RO_ALL, &z, &report);
 
   if (ret || (report != 1)) return IOStatus::IOError("Zone report failed\n");
 
