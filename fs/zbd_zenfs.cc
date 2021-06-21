@@ -202,7 +202,7 @@ IOStatus ZonedBlockDevice::CheckScheduler() {
 IOStatus ZonedBlockDevice::Open(bool readonly) {
   struct zbd_zone *zone_rep;
   unsigned int reported_zones;
-  size_t addr_space_sz;
+  uint64_t addr_space_sz;
   zbd_info info;
   Status s;
   uint64_t i = 0;
