@@ -27,6 +27,7 @@ DEFINE_bool(force, false, "Force file system creation.");
 DEFINE_string(path, "", "File path");
 DEFINE_int32(finish_threshold, 0, "Finish used zones if less than x% left");
 DEFINE_string(restore_path, "", "Path to restore files");
+DEFINE_string(backup_path, "", "Path to backup files");
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -344,7 +345,15 @@ int zenfs_tool_backup() {
     return 1;
   }
 
-  io_status = zenfs_tool_copy_dir(zenFS, "", FileSystem::Default().get(), FLAGS_path);
+  if (!FLAGS_backup_path.empty() && FLAGS_backup_path.back() != '/') {
+    std::string dest_filename = FLAGS_path + "/" + 
+                                FLAGS_backup_path.substr(FLAGS_backup_path.find_last_of('/')+1);
+    io_status = zenfs_tool_copy_file(zenFS, FLAGS_backup_path, FileSystem::Default().get(), 
+                                     dest_filename);
+  } else {
+    io_status = zenfs_tool_copy_dir(zenFS, FLAGS_backup_path, FileSystem::Default().get(),
+                                    FLAGS_path);
+  }
   if (!io_status.ok()) {
     fprintf(stderr, "Copy failed, error: %s\n", io_status.ToString().c_str());
     return 1;
@@ -377,7 +386,8 @@ int zenfs_tool_restore() {
     return 1;
   }
   
-  io_status = zenfs_tool_copy_dir(FileSystem::Default().get(), FLAGS_path, zenFS, FLAGS_restore_path);
+  io_status = zenfs_tool_copy_dir(FileSystem::Default().get(), FLAGS_path, zenFS,
+                                  FLAGS_restore_path);
   if (!io_status.ok()) {
     fprintf(stderr, "Copy failed, error: %s\n", io_status.ToString().c_str());
     return 1;
