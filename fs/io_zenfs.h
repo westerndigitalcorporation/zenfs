@@ -52,6 +52,7 @@ class ZoneFile {
   uint32_t nr_synced_extents_;
   bool open_for_wr_ = false;
   time_t m_time_;
+
  public:
   explicit ZoneFile(ZonedBlockDevice* zbd, std::string filename,
                     uint64_t file_id_);

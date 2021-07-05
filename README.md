@@ -107,5 +107,12 @@ Each valid meta data zone contains:
 * At least one snapshot of all files in the file system
 * Incremental file system updates (new files, new extents, deletes, renames etc)
 
-    
-    
+# Contribution Guide
+
+ZenFS uses clang-format with Google code style. You may run the following commands
+before submitting a PR.
+
+```bash
+clang-format-11 -n -Werror --style=file fs/* # Check for style issues
+clang-format-11 -i --style=file fs/*         # Auto-fix the style issues
+```

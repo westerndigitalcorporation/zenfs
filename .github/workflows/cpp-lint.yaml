@@ -1,0 +1,19 @@
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+    branches:
+    - master
+name: Lint
+jobs:
+  clang-format:
+    name: Lint with clang-format
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Run clang-format style check for C/C++ programs.
+      uses: jidicula/clang-format-action@v3.4.0
+      with:
+        clang-format-version: '11'
+        check-path: 'fs'
