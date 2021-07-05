@@ -19,8 +19,8 @@
 #include <vector>
 
 #include "rocksdb/utilities/object_registry.h"
-#include "util/crc32c.h"
 #include "util/coding.h"
+#include "util/crc32c.h"
 
 #define DEFAULT_ZENV_LOG_PATH "/tmp/"
 
@@ -78,8 +78,7 @@ Status Superblock::CompatibleWith(ZonedBlockDevice* zbd) {
     return Status::Corruption("ZenFS Superblock",
                               "Error: block size missmatch");
   if (zone_size_ != (zbd->GetZoneSize() / block_size_))
-    return Status::Corruption("ZenFS Superblock",
-                              "Error: zone size missmatch");
+    return Status::Corruption("ZenFS Superblock", "Error: zone size missmatch");
   if (nr_zones_ > zbd->GetNrZones())
     return Status::Corruption("ZenFS Superblock",
                               "Error: nr of zones missmatch");
@@ -470,7 +469,7 @@ IOStatus ZenFS::NewWritableFile(const std::string& fname,
 
   /* Persist the creation of the file */
   s = SyncFileMetadata(zoneFile);
-  if(!s.ok()) {
+  if (!s.ok()) {
     delete zoneFile;
     return s;
   }
@@ -479,7 +478,8 @@ IOStatus ZenFS::NewWritableFile(const std::string& fname,
   files_.insert(std::make_pair(fname.c_str(), zoneFile));
   files_mtx_.unlock();
 
-  result->reset(new ZonedWritableFile(zbd_, !file_opts.use_direct_writes, zoneFile, &metadata_writer_));
+  result->reset(new ZonedWritableFile(zbd_, !file_opts.use_direct_writes,
+                                      zoneFile, &metadata_writer_));
 
   return s;
 }
@@ -558,7 +558,7 @@ IOStatus ZenFS::GetChildren(const std::string& dir, const IOOptions& options,
 IOStatus ZenFS::DeleteFile(const std::string& fname, const IOOptions& options,
                            IODebugContext* dbg) {
   IOStatus s;
-  ZoneFile *zoneFile = GetFile(fname);
+  ZoneFile* zoneFile = GetFile(fname);
 
   Debug(logger_, "Delete file: %s \n", fname.c_str());
 
@@ -579,19 +579,19 @@ IOStatus ZenFS::DeleteFile(const std::string& fname, const IOOptions& options,
 IOStatus ZenFS::GetFileModificationTime(const std::string& f,
                                         const IOOptions& options,
                                         uint64_t* mtime, IODebugContext* dbg) {
-   ZoneFile* zoneFile;
-   IOStatus s;
+  ZoneFile* zoneFile;
+  IOStatus s;
 
-   Debug(logger_, "GetFileModificationTime: %s \n", f.c_str());
-   files_mtx_.lock();
-   if (files_.find(f) != files_.end()) {
-     zoneFile = files_[f];
-     *mtime = (uint64_t)zoneFile->GetFileModificationTime();
-   } else {
-     s = target()->GetFileModificationTime(ToAuxPath(f), options, mtime, dbg);
-   }
-   files_mtx_.unlock();
-   return s;
+  Debug(logger_, "GetFileModificationTime: %s \n", f.c_str());
+  files_mtx_.lock();
+  if (files_.find(f) != files_.end()) {
+    zoneFile = files_[f];
+    *mtime = (uint64_t)zoneFile->GetFileModificationTime();
+  } else {
+    s = target()->GetFileModificationTime(ToAuxPath(f), options, mtime, dbg);
+  }
+  files_mtx_.unlock();
+  return s;
 }
 
 IOStatus ZenFS::GetFileSize(const std::string& f, const IOOptions& options,
