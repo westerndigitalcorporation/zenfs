@@ -362,6 +362,8 @@ class ZenFS : public FileSystemWrapper {
                                 IODebugContext* /*dbg*/) {
     return IOStatus::NotSupported("AreFilesSame is not supported in ZenFS");
   }
+
+  ZonedBlockDevice* GetZonedBlockDevice() { return zbd_; }
 };
 #endif  // !defined(ROCKSDB_LITE) && defined(OS_LINUX)
 
