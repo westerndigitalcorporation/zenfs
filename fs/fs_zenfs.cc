@@ -378,12 +378,19 @@ IOStatus ZenFS::SyncFileMetadata(ZoneFile* zoneFile) {
   return s;
 }
 
-ZoneFile* ZenFS::GetFile(std::string fname) {
+/* Must hold files_mtx_ */
+ZoneFile* ZenFS::GetFileInternal(std::string fname) {
   ZoneFile* zoneFile = nullptr;
-  files_mtx_.lock();
   if (files_.find(fname) != files_.end()) {
     zoneFile = files_[fname];
   }
+  return zoneFile;
+}
+
+ZoneFile* ZenFS::GetFile(std::string fname) {
+  ZoneFile* zoneFile = nullptr;
+  files_mtx_.lock();
+  zoneFile = GetFileInternal(fname);
   files_mtx_.unlock();
   return zoneFile;
 }
@@ -392,8 +399,8 @@ IOStatus ZenFS::DeleteFile(std::string fname) {
   ZoneFile* zoneFile = nullptr;
   IOStatus s;
 
-  zoneFile = GetFile(fname);
   files_mtx_.lock();
+  zoneFile = GetFileInternal(fname);
   if (zoneFile != nullptr) {
     std::string record;
 
