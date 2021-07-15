@@ -18,6 +18,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -54,6 +55,8 @@ class Zone {
   uint64_t GetZoneNr();
   uint64_t GetCapacityLeft();
 
+  void EncodeJson(std::stringstream &json_stream);
+
   void CloseWR(); /* Done writing */
 };
 
@@ -80,6 +83,9 @@ class ZonedBlockDevice {
 
   unsigned int max_nr_active_io_zones_;
   unsigned int max_nr_open_io_zones_;
+
+  void EncodeJsonZone(std::stringstream &json_stream,
+                      const std::vector<Zone *> zones);
 
  public:
   explicit ZonedBlockDevice(std::string bdevname,
@@ -117,6 +123,8 @@ class ZonedBlockDevice {
 
   void NotifyIOZoneFull();
   void NotifyIOZoneClosed();
+
+  void EncodeJson(std::stringstream &json_stream);
 
  private:
   std::string ErrorToString(int err);

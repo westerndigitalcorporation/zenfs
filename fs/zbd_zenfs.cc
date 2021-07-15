@@ -72,6 +72,17 @@ void Zone::CloseWR() {
   if (capacity_ == 0) zbd_->NotifyIOZoneFull();
 }
 
+void Zone::EncodeJson(std::stringstream &json_stream) {
+  json_stream << "{";
+  json_stream << "\"start\":" << start_ << ",";
+  json_stream << "\"capacity\":" << capacity_ << ",";
+  json_stream << "\"max_capacity\":" << max_capacity_ << ",";
+  json_stream << "\"wp\":" << wp_ << ",";
+  json_stream << "\"lifetime\":" << lifetime_ << ",";
+  json_stream << "\"used_capacity\":" << used_capacity_;
+  json_stream << "}";
+}
+
 IOStatus Zone::Reset() {
   size_t zone_sz = zbd_->GetZoneSize();
   unsigned int report = 1;
@@ -556,7 +567,33 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
 }
 
 std::string ZonedBlockDevice::GetFilename() { return filename_; }
+
 uint32_t ZonedBlockDevice::GetBlockSize() { return block_sz_; }
+
+void ZonedBlockDevice::EncodeJsonZone(std::stringstream &json_stream,
+                                      const std::vector<Zone *> zones) {
+  bool first_element = true;
+  json_stream << "[";
+  for (Zone *zone : zones) {
+    if (first_element) {
+      first_element = false;
+    } else {
+      json_stream << ",";
+    }
+    zone->EncodeJson(json_stream);
+  }
+
+  json_stream << "]";
+}
+
+void ZonedBlockDevice::EncodeJson(std::stringstream &json_stream) {
+  json_stream << "{";
+  json_stream << "\"meta\":";
+  EncodeJsonZone(json_stream, meta_zones);
+  json_stream << ",\"io\":";
+  EncodeJsonZone(json_stream, io_zones);
+  json_stream << "}";
+}
 
 }  // namespace ROCKSDB_NAMESPACE
 

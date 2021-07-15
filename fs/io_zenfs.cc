@@ -43,6 +43,13 @@ void ZoneExtent::EncodeTo(std::string* output) {
   PutFixed32(output, length_);
 }
 
+void ZoneExtent::EncodeJson(std::stringstream& json_stream) {
+  json_stream << "{";
+  json_stream << "\"start\":" << start_ << ",";
+  json_stream << "\"length\":" << length_;
+  json_stream << "}";
+}
+
 enum ZoneFileTag : uint32_t {
   kFileID = 1,
   kFileName = 2,
@@ -77,6 +84,26 @@ void ZoneFile::EncodeTo(std::string* output, uint32_t extent_start) {
   PutFixed64(output, (uint64_t)m_time_);
   /* We're not encoding active zone and extent start
    * as files will always be read-only after mount */
+}
+
+void ZoneFile::EncodeJson(std::stringstream& json_stream) {
+  json_stream << "{";
+  json_stream << "\"id\":" << file_id_ << ",";
+  json_stream << "\"filename\":\"" << filename_ << "\",";
+  json_stream << "\"size\":" << fileSize << ",";
+  json_stream << "\"hint\":" << lifetime_ << ",";
+  json_stream << "\"extents\":[";
+
+  bool first_element = true;
+  for (ZoneExtent* extent : extents_) {
+    if (first_element) {
+      first_element = false;
+    } else {
+      json_stream << ",";
+    }
+    extent->EncodeJson(json_stream);
+  }
+  json_stream << "]}";
 }
 
 Status ZoneFile::DecodeFrom(Slice* input) {
