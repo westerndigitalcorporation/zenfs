@@ -661,6 +661,20 @@ void ZenFS::EncodeSnapshotTo(std::string* output) {
   PutLengthPrefixedSlice(output, Slice(files_string));
 }
 
+void ZenFS::EncodeJson(std::stringstream& json_stream) {
+  bool first_element = true;
+  json_stream << "[";
+  for (const auto& file : files_) {
+    if (first_element) {
+      first_element = false;
+    } else {
+      json_stream << ",";
+    }
+    file.second->EncodeJson(json_stream);
+  }
+  json_stream << "]";
+}
+
 Status ZenFS::DecodeFileUpdateFrom(Slice* slice) {
   ZoneFile* update = new ZoneFile(zbd_, "not_set", 0);
   uint64_t id;

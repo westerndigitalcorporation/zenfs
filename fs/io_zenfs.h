@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -34,6 +35,7 @@ class ZoneExtent {
   explicit ZoneExtent(uint64_t start, uint32_t length, Zone* zone);
   Status DecodeFrom(Slice* input);
   void EncodeTo(std::string* output);
+  void EncodeJson(std::stringstream& json_stream);
 };
 
 class ZoneFile {
@@ -86,6 +88,7 @@ class ZoneFile {
     EncodeTo(output, nr_synced_extents_);
   };
   void EncodeSnapshotTo(std::string* output) { EncodeTo(output, 0); };
+  void EncodeJson(std::stringstream& json_stream);
   void MetadataSynced() { nr_synced_extents_ = extents_.size(); };
 
   Status DecodeFrom(Slice* input);

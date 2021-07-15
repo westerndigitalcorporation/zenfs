@@ -11,6 +11,7 @@
 #include <iostream>
 #include <fstream>
 #include <streambuf>
+#include <sstream>
 
 #include <rocksdb/file_system.h>
 #include <rocksdb/plugin/zenfs/fs/fs_zenfs.h>
@@ -395,6 +396,31 @@ int zenfs_tool_restore() {
 
   return 0;
 }
+
+int zenfs_tool_dump() {
+  Status s;
+  ZonedBlockDevice *zbd = zbd_open(true);
+  if (zbd == nullptr) return 1;
+
+  ZenFS *zenFS;
+  s = zenfs_mount(zbd, &zenFS, true);
+  if (!s.ok()) {
+    fprintf(stderr, "Failed to mount filesystem, error: %s\n",
+            s.ToString().c_str());
+    return 1;
+  }
+
+  std::stringstream json_stream;
+  json_stream << "{\"zones\":";
+  zbd->EncodeJson(json_stream);
+  json_stream << ",\"files\":";
+  zenFS->EncodeJson(json_stream);
+  json_stream << "}";
+  fprintf(stdout, "%s\n", json_stream.str().c_str());
+
+  return 0;
+}
+
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char **argv) {
@@ -424,6 +450,8 @@ int main(int argc, char **argv) {
     return ROCKSDB_NAMESPACE::zenfs_tool_backup();
   } else if (subcmd == "restore") {
     return ROCKSDB_NAMESPACE::zenfs_tool_restore();
+  } else if (subcmd == "dump") {
+    return ROCKSDB_NAMESPACE::zenfs_tool_dump();
   } else {
     fprintf(stderr, "Subcommand not recognized: %s\n", subcmd.c_str());
     return 1;
