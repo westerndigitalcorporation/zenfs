@@ -72,7 +72,7 @@ void Zone::CloseWR() {
   if (capacity_ == 0) zbd_->NotifyIOZoneFull();
 }
 
-void Zone::EncodeJson(std::stringstream &json_stream) {
+void Zone::EncodeJson(std::ostream &json_stream) {
   json_stream << "{";
   json_stream << "\"start\":" << start_ << ",";
   json_stream << "\"capacity\":" << capacity_ << ",";
@@ -570,7 +570,7 @@ std::string ZonedBlockDevice::GetFilename() { return filename_; }
 
 uint32_t ZonedBlockDevice::GetBlockSize() { return block_sz_; }
 
-void ZonedBlockDevice::EncodeJsonZone(std::stringstream &json_stream,
+void ZonedBlockDevice::EncodeJsonZone(std::ostream &json_stream,
                                       const std::vector<Zone *> zones) {
   bool first_element = true;
   json_stream << "[";
@@ -586,7 +586,7 @@ void ZonedBlockDevice::EncodeJsonZone(std::stringstream &json_stream,
   json_stream << "]";
 }
 
-void ZonedBlockDevice::EncodeJson(std::stringstream &json_stream) {
+void ZonedBlockDevice::EncodeJson(std::ostream &json_stream) {
   json_stream << "{";
   json_stream << "\"meta\":";
   EncodeJsonZone(json_stream, meta_zones);

@@ -410,13 +410,12 @@ int zenfs_tool_dump() {
     return 1;
   }
 
-  std::stringstream json_stream;
+  std::ostream &json_stream = std::cout;
   json_stream << "{\"zones\":";
   zbd->EncodeJson(json_stream);
   json_stream << ",\"files\":";
   zenFS->EncodeJson(json_stream);
   json_stream << "}";
-  fprintf(stdout, "%s\n", json_stream.str().c_str());
 
   return 0;
 }

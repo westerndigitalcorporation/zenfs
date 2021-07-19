@@ -175,7 +175,7 @@ class ZenFS : public FileSystemWrapper {
     return "ZenFS - The Zoned-enabled File System";
   }
 
-  void EncodeJson(std::stringstream& json_stream);
+  void EncodeJson(std::ostream& json_stream);
 
   virtual IOStatus NewSequentialFile(const std::string& fname,
                                      const FileOptions& file_opts,

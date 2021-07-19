@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
-import json
+import cysimdjson
 import string
 from dataclasses import dataclass
 import sys
 from hurry.filesize import size
+from tqdm import tqdm
 
 
 @dataclass
@@ -20,7 +21,7 @@ class File:
     filename: str
     size: int
     hint: int
-    extents: list[Extent]
+    extents: list
 
 
 @dataclass
@@ -53,8 +54,11 @@ def file_symbol(id):
 
 
 def load_data(json_file):
-    with open(json_file) as f:
-        data = json.load(f)
+    print("loading data...")
+    with open(json_file, 'rb') as f:
+        parser = cysimdjson.JSONParser()
+        data = parser.parse(f.read())
+    print("processing data...")
     return data
 
 
@@ -84,6 +88,7 @@ def cmd_zones(data):
     total_capacity = 0
     used_capacity = 0
     remaining_capacity = 0
+    reclaimable_capacity = 0
 
     print("--- META ZONES ---")
     for zone in get_meta_zones(data):
@@ -97,18 +102,16 @@ def cmd_zones(data):
         total_capacity += zone.max_capacity
         remaining_capacity += zone.capacity
         used_capacity += zone.used_capacity
+        if zone.capacity == 0:
+            reclaimable_capacity += zone.max_capacity - zone.used_capacity
         print_zone(zone)
 
-    print(f"total={size_human(total_capacity)} free={size_human(remaining_capacity)} used={size_human(used_capacity)} reclaimable={size_human(total_capacity-used_capacity)}")
-
-
-def to_extent(file_id, extent_json):
-    return Extent(file_id, extent_json["start"], extent_json["length"])
+    print(f"total={size_human(total_capacity)} free={size_human(remaining_capacity)} used={size_human(used_capacity)} reclaimable={size_human(reclaimable_capacity)}")
 
 
 def to_file(file_json):
     file_id = file_json['id']
-    return File(file_id, file_json['filename'], file_json['size'], file_json['hint'], list(map(lambda x: to_extent(file_id, x), file_json['extents'])))
+    return File(file_id, file_json['filename'], file_json['size'], file_json['hint'], file_json['extents'])
 
 
 def get_files(data):
@@ -123,14 +126,16 @@ def cmd_files(data):
     print("--- FILES ---")
     files = sorted(get_files(data), key=lambda x: x.file_id)
     zones = sorted(get_io_zones(data), key=lambda x: x.start)
+    total_extents = 0
     for file in files:
         print_file(file)
         last_zone = zones[0]
         zone_id = 0
         extent_counter = 0
         extent_size = 0
-        for extent in sorted(file.extents, key=lambda x: x.start):
-            while extent.start > last_zone.start + last_zone.max_capacity:
+        total_extents += len(file.extents)
+        for extent in sorted(file.extents, key=lambda x: x["start"]):
+            while extent["start"] > last_zone.start + last_zone.max_capacity:
                 if extent_counter != 0:
                     print(
                         f"  Zone #{zone_id}: len(extents)={extent_counter} size={size_human(extent_size)}")
@@ -139,11 +144,12 @@ def cmd_files(data):
                 zone_id += 1
                 last_zone = zones[zone_id]
             extent_counter += 1
-            extent_size += extent.length
+            extent_size += extent["length"]
         if extent_counter != 0:
             print(
                 f"  Zone #{zone_id}: len(extents)={extent_counter} size={size_human(extent_size)}")
             extent_counter = 0
+    print(f"{total_extents} extents in total")
 
 
 def cmd_extents(data):
@@ -151,15 +157,16 @@ def cmd_extents(data):
     files_map = dict(zip(map(lambda x: x.file_id, files), files))
     zones = sorted(get_io_zones(data), key=lambda x: x.start)
     extents_in_zone = {}
-    for file in files:
+    for file in tqdm(files):
         last_zone = zones[0]
         zone_id = 0
-        for extent in sorted(file.extents, key=lambda x: x.start):
-            while extent.start > last_zone.start + last_zone.max_capacity:
+        for extent in sorted(file.extents, key=lambda x: x["start"]):
+            while extent["start"] > last_zone.start + last_zone.max_capacity:
                 zone_id += 1
                 last_zone = zones[zone_id]
             extent_list = extents_in_zone.get(zone_id, [])
-            extent_list.append(extent)
+            extent_list.append(
+                Extent(file.file_id, extent["start"], extent["length"]))
             extents_in_zone[zone_id] = extent_list
 
     chunk_size = 4 * 1024 * 1024  # chunk size = 4MB

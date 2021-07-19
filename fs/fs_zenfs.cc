@@ -668,7 +668,7 @@ void ZenFS::EncodeSnapshotTo(std::string* output) {
   PutLengthPrefixedSlice(output, Slice(files_string));
 }
 
-void ZenFS::EncodeJson(std::stringstream& json_stream) {
+void ZenFS::EncodeJson(std::ostream& json_stream) {
   bool first_element = true;
   json_stream << "[";
   for (const auto& file : files_) {
