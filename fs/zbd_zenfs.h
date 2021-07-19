@@ -55,7 +55,7 @@ class Zone {
   uint64_t GetZoneNr();
   uint64_t GetCapacityLeft();
 
-  void EncodeJson(std::stringstream &json_stream);
+  void EncodeJson(std::ostream &json_stream);
 
   void CloseWR(); /* Done writing */
 };
@@ -84,7 +84,7 @@ class ZonedBlockDevice {
   unsigned int max_nr_active_io_zones_;
   unsigned int max_nr_open_io_zones_;
 
-  void EncodeJsonZone(std::stringstream &json_stream,
+  void EncodeJsonZone(std::ostream &json_stream,
                       const std::vector<Zone *> zones);
 
  public:
@@ -124,7 +124,7 @@ class ZonedBlockDevice {
   void NotifyIOZoneFull();
   void NotifyIOZoneClosed();
 
-  void EncodeJson(std::stringstream &json_stream);
+  void EncodeJson(std::ostream &json_stream);
 
  private:
   std::string ErrorToString(int err);

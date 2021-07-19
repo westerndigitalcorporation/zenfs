@@ -43,7 +43,7 @@ void ZoneExtent::EncodeTo(std::string* output) {
   PutFixed32(output, length_);
 }
 
-void ZoneExtent::EncodeJson(std::stringstream& json_stream) {
+void ZoneExtent::EncodeJson(std::ostream& json_stream) {
   json_stream << "{";
   json_stream << "\"start\":" << start_ << ",";
   json_stream << "\"length\":" << length_;
@@ -86,7 +86,7 @@ void ZoneFile::EncodeTo(std::string* output, uint32_t extent_start) {
    * as files will always be read-only after mount */
 }
 
-void ZoneFile::EncodeJson(std::stringstream& json_stream) {
+void ZoneFile::EncodeJson(std::ostream& json_stream) {
   json_stream << "{";
   json_stream << "\"id\":" << file_id_ << ",";
   json_stream << "\"filename\":\"" << filename_ << "\",";
