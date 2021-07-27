@@ -56,7 +56,7 @@ Before ZenFS can be used in RocksDB, the file system metadata and superblock mus
 This is done with the zenfs utility, using the mkfs command:
 
 ```
-./plugin/zenfs/util/zenfs mkfs --zbd=/dev/<zoned block device> --aux-path=<path to store LOG and LOCK files>
+./plugin/zenfs/util/zenfs mkfs --zbd=<zoned block device> --aux_path=<path to store LOG and LOCK files>
 ```
 
 ## Testing with db_bench
