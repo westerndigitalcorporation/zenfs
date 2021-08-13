@@ -6,6 +6,29 @@ This directory contains the ZenFS command line utility.
 
 TODO
 
+## ZBD Micro Bench Tool
+
+`zbd_micro_bench` uses ZBD commands to test how the device performs under ZenFS
+workloads. It will fill a zone, finish a zone and reset a zone for many times,
+which provides information on latencies of each ZBD commands.
+
+**Please backup all data on a disk before using this tool.** ZBD micro bench tool
+will corrupt existing data on disk.
+
+### Usage
+
+```bash
+make zbd_micro_bench
+./zbd_micro_bench --zbd=/dev/nvme3n2 --fill_bytes=409600000 --epoch=10000
+```
+
+By running this command, micro bench tool will randomly fill 10000 zones one by
+one. In each epoch, it will first fill 409600000 bytes, then finish zone, and
+finally reset the zone.
+
+The tool will report P50, P95, P99 and P999 latency in **nanoseconds** for
+each operation.
+
 ## ZenFS Dump Analysis Tool
 
 When ZenFS gets full, users may need to quickly format or recycle the disk,

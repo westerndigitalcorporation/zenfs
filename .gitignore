@@ -1,3 +1,4 @@
 util/zenfs
+util/zbd_micro_bench
 fs/*.o
 tests/results
