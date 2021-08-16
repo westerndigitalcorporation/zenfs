@@ -537,7 +537,11 @@ IOStatus ZenFS::GetChildren(const std::string& dir, const IOOptions& options,
 
   Debug(logger_, "GetChildren: %s \n", dir.c_str());
 
-  target()->GetChildren(ToAuxPath(dir), options, &auxfiles, dbg);
+  s = target()->GetChildren(ToAuxPath(dir), options, &auxfiles, dbg);
+  if (!s.ok()) {
+    return s;
+  }
+
   for (const auto& f : auxfiles) {
     if (f != "." && f != "..") result->push_back(f);
   }
