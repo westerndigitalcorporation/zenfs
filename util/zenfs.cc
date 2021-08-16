@@ -116,16 +116,19 @@ void list_children(ZenFS *zenFS, std::string path) {
   uint64_t size;
   IOStatus io_status = zenFS->GetChildren(path, opts, &result, &dbg);
 
-  if (!io_status.ok()) return;
+  if (!io_status.ok()) {
+    fprintf(stderr, "Error: %s %s\n", io_status.ToString().c_str(), path.c_str());
+    return;
+  }
 
   for (const auto& f : result) {
-    io_status = zenFS->GetFileSize(path + "/" + f, opts, &size, &dbg);
+    io_status = zenFS->GetFileSize(path + f, opts, &size, &dbg);
     if (!io_status.ok()) {
       fprintf(stderr, "Failed to get size of file %s\n", f.c_str());
       return;
     }
     uint64_t mtime;
-    io_status = zenFS->GetFileModificationTime(path + "/" + f, opts, &mtime, &dbg);
+    io_status = zenFS->GetFileModificationTime(path + f, opts, &mtime, &dbg);
     if (!io_status.ok()) {
       fprintf(stderr, "Failed to get modification time of file %s, error = %s\n",
                                              f.c_str(), io_status.ToString().c_str());
@@ -142,6 +145,23 @@ void list_children(ZenFS *zenFS, std::string path) {
   }
 }
 
+void format_path(std::string &path)
+{
+  std::size_t pos = path.find('/', 0);
+  while (pos != std::string::npos) {
+    while (path.compare(pos + 1, 1, "/") == 0) {
+      path.erase(pos + 1, 1);
+    }
+    pos = path.find('/', pos + 1);
+  }
+
+  if (path.front() == '/')
+    path.erase(0, 1);
+
+  if (path.back() != '/')
+    path = path + "/";
+}
+
 int zenfs_tool_list() {
   Status s;
   ZonedBlockDevice *zbd = zbd_open(true);
@@ -155,6 +175,7 @@ int zenfs_tool_list() {
     return 1;
   }
 
+  format_path(FLAGS_path);
   list_children(zenFS, FLAGS_path);
 
   return 0;
