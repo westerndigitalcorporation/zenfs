@@ -79,7 +79,6 @@ class ZonedBlockDevice {
   std::atomic<long> active_io_zones_;
   std::atomic<long> open_io_zones_;
   std::condition_variable zone_resources_;
-  std::mutex zone_resources_mtx_; /* Protects active/open io zones */
 
   unsigned int max_nr_active_io_zones_;
   unsigned int max_nr_open_io_zones_;
@@ -125,6 +124,8 @@ class ZonedBlockDevice {
   void NotifyIOZoneClosed();
 
   void EncodeJson(std::ostream &json_stream);
+
+  std::mutex zone_resources_mtx_; /* Protects active/open io zones */
 
  private:
   std::string ErrorToString(int err);
