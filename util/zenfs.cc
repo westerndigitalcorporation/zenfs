@@ -357,10 +357,10 @@ int zenfs_tool_backup() {
   ZonedBlockDevice *zbd;
   ZenFS *zenFS;
 
-  zbd = zbd_open(false);
+  zbd = zbd_open(true);
   if (zbd == nullptr) return 1;
 
-  status = zenfs_mount(zbd, &zenFS, false);
+  status = zenfs_mount(zbd, &zenFS, true);
   if (!status.ok()) {
     fprintf(stderr, "Failed to mount filesystem, error: %s\n",
             status.ToString().c_str());
