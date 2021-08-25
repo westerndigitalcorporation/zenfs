@@ -20,6 +20,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -80,7 +81,11 @@ class ZonedBlockDevice {
   std::atomic<long> open_io_zones_;
   std::condition_variable zone_resources_;
   std::mutex zone_resources_mtx_; /* Protects active/open io zones */
+  std::condition_variable zone_management_;
+  std::mutex zone_management_mtx_;
+  std::thread *background_thrd_;
 
+  bool thread_exit_ = false;
   unsigned int max_nr_active_io_zones_;
   unsigned int max_nr_open_io_zones_;
 
@@ -110,6 +115,9 @@ class ZonedBlockDevice {
   void ResetUnusedIOZones();
   void LogZoneStats();
   void LogZoneUsage();
+  void CreateZBDThread();
+  void ZoneReclaimThread();
+  void ShutdownZBDThread();
 
   int GetReadFD() { return read_f_; }
   int GetReadDirectFD() { return read_direct_f_; }
@@ -123,6 +131,9 @@ class ZonedBlockDevice {
 
   void NotifyIOZoneFull();
   void NotifyIOZoneClosed();
+  void NotifyIOZoneReset();
+  void NotifyIOZoneAllocated();
+  void NotifyThreadExit();
 
   void EncodeJson(std::ostream &json_stream);
 

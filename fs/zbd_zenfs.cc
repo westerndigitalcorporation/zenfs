@@ -335,6 +335,21 @@ void ZonedBlockDevice::NotifyIOZoneClosed() {
   zone_resources_.notify_one();
 }
 
+void ZonedBlockDevice::NotifyIOZoneReset() {
+  const std::lock_guard<std::mutex> lock(zone_resources_mtx_);
+  zone_resources_.notify_one();
+}
+
+void ZonedBlockDevice::NotifyIOZoneAllocated() {
+  const std::lock_guard<std::mutex> lock(zone_management_mtx_);
+  zone_management_.notify_one();
+}
+
+void ZonedBlockDevice::NotifyThreadExit() {
+  const std::lock_guard<std::mutex> lock(zone_management_mtx_);
+  zone_management_.notify_one();
+}
+
 uint64_t ZonedBlockDevice::GetFreeSpace() {
   uint64_t free = 0;
   for (const auto z : io_zones) {
@@ -401,6 +416,11 @@ void ZonedBlockDevice::LogZoneUsage() {
   }
 }
 
+void ZonedBlockDevice::ShutdownZBDThread() {
+  thread_exit_ = true;
+  NotifyThreadExit();
+}
+
 ZonedBlockDevice::~ZonedBlockDevice() {
   for (const auto z : meta_zones) {
     delete z;
@@ -462,55 +482,98 @@ void ZonedBlockDevice::ResetUnusedIOZones() {
   }
 }
 
+void ZonedBlockDevice::CreateZBDThread() {
+  background_thrd_ =
+      new std::thread(&ZonedBlockDevice::ZoneReclaimThread, this);
+}
+
+void ZonedBlockDevice::ZoneReclaimThread() {
+  for (;;) {
+    Status s;
+    Zone *finish_victim = nullptr;
+
+    {
+      std::unique_lock<std::mutex> lk(zone_management_mtx_);
+      zone_management_.wait(lk, [this] {
+        if ((active_io_zones_.load() >= (max_nr_active_io_zones_ * 9) / 10) ||
+            thread_exit_ == true)
+          return true;
+        return false;
+      });
+    }
+    if (thread_exit_) return;
+
+    io_zones_mtx.lock();
+    /* Reset any unused zones and finish used zones under capacity threshold */
+    for (const auto z : io_zones) {
+      if (z->open_for_write_ || z->IsEmpty() || (z->IsFull() && z->IsUsed()))
+        continue;
+
+      if (!z->IsUsed()) {
+        if (!z->IsFull()) active_io_zones_--;
+        s = z->Reset();
+        if (!s.ok()) {
+          Debug(logger_, "Failed resetting zone !");
+        }
+        NotifyIOZoneReset();
+        continue;
+      }
+
+      if ((z->capacity_ < (z->max_capacity_ * finish_threshold_ / 100))) {
+        /* If there is less than finish_threshold_% remaining capacity in a
+         * non-open-zone, finish the zone */
+        s = z->Finish();
+        if (!s.ok()) {
+          Debug(logger_, "Failed finishing zone");
+        }
+
+        NotifyIOZoneFull();
+        continue;
+      }
+
+      if (!z->IsFull()) {
+        if (finish_victim == nullptr) {
+          finish_victim = z;
+        } else if (finish_victim->capacity_ > z->capacity_) {
+          finish_victim = z;
+        }
+        /* If we are at the active io zone limit, finish an open zone(if
+         * available) with least capacity left */
+        if (active_io_zones_.load() == max_nr_active_io_zones_ &&
+            finish_victim != nullptr) {
+          s = finish_victim->Finish();
+          if (!s.ok()) {
+            Debug(logger_, "Failed finishing zone");
+          }
+          NotifyIOZoneFull();
+          /* set it to null so that new finish victim can be selected in next
+           * iterations, else it will be pointing to already finished zone */
+          finish_victim = nullptr;
+        }
+      }
+    }
+    io_zones_mtx.unlock();
+  }
+}
+
 Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
   Zone *allocated_zone = nullptr;
-  Zone *finish_victim = nullptr;
   unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
   int new_zone = 0;
-  Status s;
 
   io_zones_mtx.lock();
-
-  /* Make sure we are below the zone open limit */
-  {
-    std::unique_lock<std::mutex> lk(zone_resources_mtx_);
-    zone_resources_.wait(lk, [this] {
-      if (open_io_zones_.load() < max_nr_open_io_zones_) return true;
-      return false;
-    });
-  }
-
-  /* Reset any unused zones and finish used zones under capacity treshold*/
-  for (const auto z : io_zones) {
-    if (z->open_for_write_ || z->IsEmpty() || (z->IsFull() && z->IsUsed()))
-      continue;
-
-    if (!z->IsUsed()) {
-      if (!z->IsFull()) active_io_zones_--;
-      s = z->Reset();
-      if (!s.ok()) {
-        Debug(logger_, "Failed resetting zone !");
-      }
-      continue;
+  if (open_io_zones_.load() >= max_nr_open_io_zones_) {
+    /* Don't sleep on condition var holding the mutex,
+     * potentially causing a deadlock, so unlock */
+    io_zones_mtx.unlock();
+    {
+      std::unique_lock<std::mutex> lk(zone_resources_mtx_);
+      zone_resources_.wait(lk, [this] {
+        if (open_io_zones_.load() < max_nr_open_io_zones_) return true;
+        return false;
+      });
     }
-
-    if ((z->capacity_ < (z->max_capacity_ * finish_threshold_ / 100))) {
-      /* If there is less than finish_threshold_% remaining capacity in a
-       * non-open-zone, finish the zone */
-      s = z->Finish();
-      if (!s.ok()) {
-        Debug(logger_, "Failed finishing zone");
-      }
-      active_io_zones_--;
-    }
-
-    if (!z->IsFull()) {
-      if (finish_victim == nullptr) {
-        finish_victim = z;
-      } else if (finish_victim->capacity_ > z->capacity_) {
-        finish_victim = z;
-      }
-    }
+    io_zones_mtx.lock();
   }
 
   /* Try to fill an already open zone(with the best life time diff) */
@@ -526,23 +589,13 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
 
   /* If we did not find a good match, allocate an empty one */
   if (best_diff >= LIFETIME_DIFF_NOT_GOOD) {
-    /* If we at the active io zone limit, finish an open zone(if available) with
-     * least capacity left */
-    if (active_io_zones_.load() == max_nr_active_io_zones_ &&
-        finish_victim != nullptr) {
-      s = finish_victim->Finish();
-      if (!s.ok()) {
-        Debug(logger_, "Failed finishing zone");
-      }
-      active_io_zones_--;
-    }
-
     if (active_io_zones_.load() < max_nr_active_io_zones_) {
       for (const auto z : io_zones) {
         if ((!z->open_for_write_) && z->IsEmpty()) {
           z->lifetime_ = file_lifetime;
           allocated_zone = z;
           active_io_zones_++;
+          NotifyIOZoneAllocated();
           new_zone = 1;
           break;
         }

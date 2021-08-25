@@ -212,6 +212,7 @@ ZenFS::~ZenFS() {
   Status s;
   Info(logger_, "ZenFS shutting down");
   zbd_->LogZoneUsage();
+  zbd_->ShutdownZBDThread();
   LogFiles();
 
   meta_log_.reset(nullptr);
@@ -976,6 +977,7 @@ Status ZenFS::Mount(bool readonly) {
     Info(logger_, "Resetting unused IO Zones..");
     zbd_->ResetUnusedIOZones();
     Info(logger_, "  Done");
+    zbd_->CreateZBDThread();
   }
 
   LogFiles();
