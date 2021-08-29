@@ -25,9 +25,11 @@
 
 #include "rocksdb/env.h"
 #include "util/coding.h"
-#include "zbd_zenfs.h"
 
 namespace ROCKSDB_NAMESPACE {
+
+ZoneExtent::ZoneExtent(uint64_t start, uint32_t length, Zone *zone)
+    : start_(start), length_(length), zone_(zone) {}
 
 Status ZoneExtent::DecodeFrom(Slice* input) {
   if (input->size() != (sizeof(start_) + sizeof(length_)))

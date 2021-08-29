@@ -24,7 +24,6 @@
 #include <utility>
 #include <vector>
 
-#include "io_zenfs.h"
 #include "rocksdb/env.h"
 
 #define KB (1024)
@@ -164,9 +163,6 @@ IOStatus Zone::Append(char *data, uint32_t size) {
 
   return IOStatus::OK();
 }
-
-ZoneExtent::ZoneExtent(uint64_t start, uint32_t length, Zone *zone)
-    : start_(start), length_(length), zone_(zone) {}
 
 Zone *ZonedBlockDevice::GetIOZone(uint64_t offset) {
   for (const auto z : io_zones)
