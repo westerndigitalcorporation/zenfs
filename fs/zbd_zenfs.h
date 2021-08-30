@@ -25,6 +25,7 @@
 
 #include "rocksdb/env.h"
 #include "rocksdb/io_status.h"
+#include "rocksdb/plugin/zenfs/fs/zbd_stat.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -125,6 +126,8 @@ class ZonedBlockDevice {
   void NotifyIOZoneClosed();
 
   void EncodeJson(std::ostream &json_stream);
+
+  std::vector<ZoneStat> GetStat();
 
  private:
   std::string ErrorToString(int err);

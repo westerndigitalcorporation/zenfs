@@ -9,6 +9,7 @@
 #include "io_zenfs.h"
 #include "rocksdb/env.h"
 #include "rocksdb/file_system.h"
+#include "rocksdb/plugin/zenfs/fs/zbd_stat.h"
 #include "rocksdb/status.h"
 #include "zbd_zenfs.h"
 
@@ -344,6 +345,8 @@ class ZenFS : public FileSystemWrapper {
                                 IODebugContext* /*dbg*/) override {
     return IOStatus::NotSupported("AreFilesSame is not supported in ZenFS");
   }
+
+  std::vector<ZoneStat> GetStat();
 };
 #endif  // !defined(ROCKSDB_LITE) && defined(OS_LINUX)
 

@@ -174,6 +174,18 @@ Zone *ZonedBlockDevice::GetIOZone(uint64_t offset) {
   return nullptr;
 }
 
+std::vector<ZoneStat> ZonedBlockDevice::GetStat() {
+  std::vector<ZoneStat> stat;
+  for (const auto z : io_zones) {
+    ZoneStat zone_stat;
+    zone_stat.total_capacity = z->max_capacity_;
+    zone_stat.write_position = z->wp_;
+    zone_stat.start_position = z->start_;
+    stat.emplace_back(std::move(zone_stat));
+  }
+  return stat;
+}
+
 ZonedBlockDevice::ZonedBlockDevice(std::string bdevname,
                                    std::shared_ptr<Logger> logger)
     : filename_("/dev/" + bdevname), logger_(logger) {

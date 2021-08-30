@@ -207,6 +207,34 @@ int zenfs_tool_df() {
   return 0;
 }
 
+
+int zenfs_tool_stat() {
+  Status s;
+  ZonedBlockDevice *zbd = zbd_open(true);
+  if (zbd == nullptr) return 1;
+
+  ZenFS *zenFS;
+  s = zenfs_mount(zbd, &zenFS, true);
+  if (!s.ok()) {
+    fprintf(stderr, "Failed to mount filesystem, error: %s\n",
+            s.ToString().c_str());
+    return 1;
+  }
+  auto stat = zenFS->GetStat();
+
+  for (auto &&zone : stat) {
+    std::cout << "Zone total=" << zone.total_capacity
+              << " write_position=" << zone.write_position
+              << " start_position=" << zone.start_position << std::endl;
+    for (auto &&file : zone.files) {
+      std::cout << "  [" << file.file_id << "] " << file.filename << " "
+                << file.size_in_zone << std::endl;
+    }
+  }
+
+  return 0;
+}
+
 int zenfs_tool_lsuuid() {
   std::map<std::string, std::string>::iterator it;
   std::map<std::string, std::string> zenFileSystems = ListZenFileSystems();
@@ -472,6 +500,8 @@ int main(int argc, char **argv) {
     return ROCKSDB_NAMESPACE::zenfs_tool_restore();
   } else if (subcmd == "dump") {
     return ROCKSDB_NAMESPACE::zenfs_tool_dump();
+  } else if (subcmd == "stat") {
+    return ROCKSDB_NAMESPACE::zenfs_tool_stat();
   } else {
     fprintf(stderr, "Subcommand not recognized: %s\n", subcmd.c_str());
     return 1;
