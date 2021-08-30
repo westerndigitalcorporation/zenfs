@@ -54,10 +54,13 @@ class ZoneFile {
   uint32_t nr_synced_extents_;
   bool open_for_wr_ = false;
   time_t m_time_;
+ 
+  std::shared_ptr<Logger> logger_;
+  bool is_wal_;
 
  public:
   explicit ZoneFile(ZonedBlockDevice* zbd, std::string filename,
-                    uint64_t file_id_);
+                    uint64_t file_id_, std::shared_ptr<Logger> logger);
 
   virtual ~ZoneFile();
 
