@@ -400,6 +400,7 @@ ZonedWritableFile::ZonedWritableFile(ZonedBlockDevice* zbd, bool _buffered,
                                      MetadataWriter* metadata_writer) {
   wp = zoneFile->GetFileSize();
   assert(wp == 0);
+  wp_synced = wp;
 
   buffered = _buffered;
   block_sz = zbd->GetBlockSize();
@@ -438,15 +439,24 @@ IOStatus ZonedWritableFile::Fsync(const IOOptions& /*options*/,
                                   IODebugContext* /*dbg*/) {
   IOStatus s;
 
+  if (wp_synced == wp) {
+    return IOStatus::OK();
+  }
+
   buffer_mtx_.lock();
   s = FlushBuffer();
   buffer_mtx_.unlock();
   if (!s.ok()) {
     return s;
   }
-  zoneFile_->PushExtent();
 
-  return metadata_writer_->Persist(zoneFile_);
+  zoneFile_->PushExtent();
+  s = metadata_writer_->Persist(zoneFile_);
+  if (!s.ok()) {
+    return s;
+  }
+  wp_synced = wp;
+  return s;
 }
 
 IOStatus ZonedWritableFile::Sync(const IOOptions& options,
@@ -462,7 +472,7 @@ IOStatus ZonedWritableFile::Flush(const IOOptions& /*options*/,
 IOStatus ZonedWritableFile::RangeSync(uint64_t offset, uint64_t nbytes,
                                       const IOOptions& options,
                                       IODebugContext* dbg) {
-  if (wp < offset + nbytes) return Fsync(options, dbg);
+  if (wp_synced < offset + nbytes) return Fsync(options, dbg);
 
   return IOStatus::OK();
 }
@@ -492,7 +502,6 @@ IOStatus ZonedWritableFile::FlushBuffer() {
     return s;
   }
 
-  wp += buffer_pos;
   buffer_pos = 0;
 
   return IOStatus::OK();
@@ -518,6 +527,7 @@ IOStatus ZonedWritableFile::BufferedWrite(const Slice& slice) {
     memcpy(buffer + buffer_pos, data, tobuffer);
     buffer_pos += tobuffer;
     data_left -= tobuffer;
+    wp += tobuffer;
 
     if (!data_left) return IOStatus::OK();
 
@@ -552,6 +562,7 @@ IOStatus ZonedWritableFile::BufferedWrite(const Slice& slice) {
   if (data_left) {
     memcpy(buffer, data, data_left);
     buffer_pos = data_left;
+    wp += data_left;
   }
 
   return IOStatus::OK();

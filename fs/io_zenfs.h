@@ -160,6 +160,7 @@ class ZonedWritableFile : public FSWritableFile {
   uint32_t block_sz;
   uint32_t buffer_pos;
   uint64_t wp;
+  uint64_t wp_synced;
   int write_temp;
 
   ZoneFile* zoneFile_;
