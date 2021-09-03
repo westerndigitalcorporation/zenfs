@@ -63,9 +63,9 @@ uint64_t Zone::GetZoneNr() { return start_ / zbd_->GetZoneSize(); }
 
 void Zone::CloseWR() {
   assert(open_for_write_);
-  open_for_write_ = false;
 
   if (Close().ok()) {
+    assert(!open_for_write_);
     zbd_->NotifyIOZoneClosed();
   }
 
@@ -138,6 +138,7 @@ IOStatus Zone::Close() {
     if (ret) return IOStatus::IOError("Zone close failed\n");
   }
 
+  open_for_write_ = false;
   return IOStatus::OK();
 }
 
