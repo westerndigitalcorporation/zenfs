@@ -1069,7 +1069,7 @@ Status NewZenFS(FileSystem** fs, const std::string& bdevname) {
 #endif
 
   ZonedBlockDevice* zbd = new ZonedBlockDevice(bdevname, logger);
-  IOStatus zbd_status = zbd->Open();
+  IOStatus zbd_status = zbd->Open(false, true);
   if (!zbd_status.ok()) {
     Error(logger, "Failed to open zoned block device: %s",
           zbd_status.ToString().c_str());
@@ -1096,7 +1096,7 @@ std::map<std::string, std::string> ListZenFileSystems() {
     if (entry->d_type == DT_LNK) {
       std::string zbdName = std::string(entry->d_name);
       ZonedBlockDevice* zbd = new ZonedBlockDevice(zbdName, nullptr);
-      IOStatus zbd_status = zbd->Open(true);
+      IOStatus zbd_status = zbd->Open(true, false);
 
       if (zbd_status.ok()) {
         std::vector<Zone*> metazones = zbd->GetMetaZones();

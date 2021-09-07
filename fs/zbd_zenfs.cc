@@ -210,7 +210,7 @@ IOStatus ZonedBlockDevice::CheckScheduler() {
   return IOStatus::OK();
 }
 
-IOStatus ZonedBlockDevice::Open(bool readonly) {
+IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   struct zbd_zone *zone_rep;
   unsigned int reported_zones;
   uint64_t addr_space_sz;
@@ -220,7 +220,16 @@ IOStatus ZonedBlockDevice::Open(bool readonly) {
   uint64_t m = 0;
   int ret;
 
-  read_f_ = zbd_open(filename_.c_str(), O_RDONLY, &info);
+  if (!readonly && !exclusive)
+    return IOStatus::InvalidArgument("Write opens must be exclusive");
+
+  /* The non-direct file descriptor acts as an exclusive-use semaphore */
+  if (exclusive) {
+    read_f_ = zbd_open(filename_.c_str(), O_RDONLY | O_EXCL, &info);
+  } else {
+    read_f_ = zbd_open(filename_.c_str(), O_RDONLY, &info);
+  }
+
   if (read_f_ < 0) {
     return IOStatus::InvalidArgument("Failed to open zoned block device: " +
                                      ErrorToString(errno));
@@ -235,7 +244,7 @@ IOStatus ZonedBlockDevice::Open(bool readonly) {
   if (readonly) {
     write_f_ = -1;
   } else {
-    write_f_ = zbd_open(filename_.c_str(), O_WRONLY | O_DIRECT | O_EXCL, &info);
+    write_f_ = zbd_open(filename_.c_str(), O_WRONLY | O_DIRECT, &info);
     if (write_f_ < 0) {
       return IOStatus::InvalidArgument("Failed to open zoned block device: " +
                                        ErrorToString(errno));
