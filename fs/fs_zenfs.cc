@@ -539,6 +539,12 @@ IOStatus ZenFS::GetChildren(const std::string& dir, const IOOptions& options,
 
   s = target()->GetChildren(ToAuxPath(dir), options, &auxfiles, dbg);
   if (!s.ok()) {
+    /* On ZenFS empty directories cannot be created, therefore we cannot
+       distinguish between "Directory not found" and "Directory is empty"
+       and always return empty lists with OK status in both cases. */
+    if (s.IsNotFound()) {
+      return IOStatus::OK();
+    }
     return s;
   }
 
