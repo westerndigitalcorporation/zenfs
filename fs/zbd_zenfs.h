@@ -92,7 +92,7 @@ class ZonedBlockDevice {
                             std::shared_ptr<Logger> logger);
   virtual ~ZonedBlockDevice();
 
-  IOStatus Open(bool readonly = false);
+  IOStatus Open(bool readonly, bool exclusive);
   IOStatus CheckScheduler();
 
   Zone *GetIOZone(uint64_t offset);

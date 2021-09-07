@@ -24,7 +24,11 @@ using GFLAGS_NAMESPACE::SetUsageMessage;
 DEFINE_string(zbd, "", "Path to a zoned block device.");
 DEFINE_string(aux_path, "",
               "Path for auxiliary file storage (log and lock files).");
-DEFINE_bool(force, false, "Force file system creation.");
+DEFINE_bool(force, false, "Force the action. May result in data loss.\n"
+                          "If used with mkfs, data will be lost on an existing "
+                          "file system. If used with backup, data copied from "
+                          "the drive will likely be incomplete and/or corrupt "
+                          "- only use this for testing purposes.");
 DEFINE_string(path, "", "File path");
 DEFINE_int32(finish_threshold, 0, "Finish used zones if less than x% left");
 DEFINE_string(restore_path, "", "Path to restore files");
@@ -32,9 +36,9 @@ DEFINE_string(backup_path, "", "Path to backup files");
 
 namespace ROCKSDB_NAMESPACE {
 
-ZonedBlockDevice *zbd_open(bool readonly) {
+ZonedBlockDevice *zbd_open(bool readonly, bool exclusive) {
   ZonedBlockDevice *zbd = new ZonedBlockDevice(FLAGS_zbd, nullptr);
-  IOStatus open_status = zbd->Open(readonly);
+  IOStatus open_status = zbd->Open(readonly, exclusive);
 
   if (!open_status.ok()) {
     fprintf(stderr, "Failed to open zoned block device: %s, error: %s\n",
@@ -75,7 +79,7 @@ int zenfs_tool_mkfs() {
     return 1;
   }
 
-  ZonedBlockDevice *zbd = zbd_open(false);
+  ZonedBlockDevice *zbd = zbd_open(false, true);
   if (zbd == nullptr) return 1;
 
   ZenFS *zenFS;
@@ -89,7 +93,7 @@ int zenfs_tool_mkfs() {
 
   if (zenFS != nullptr) delete zenFS;
 
-  zbd = zbd_open(false);
+  zbd = zbd_open(false, true);
   zenFS = new ZenFS(zbd, FileSystem::Default(), nullptr);
 
   if (FLAGS_aux_path.back() != '/') FLAGS_aux_path.append("/");
@@ -164,7 +168,7 @@ void format_path(std::string &path)
 
 int zenfs_tool_list() {
   Status s;
-  ZonedBlockDevice *zbd = zbd_open(true);
+  ZonedBlockDevice *zbd = zbd_open(true, false);
   if (zbd == nullptr) return 1;
 
   ZenFS *zenFS;
@@ -183,7 +187,7 @@ int zenfs_tool_list() {
 
 int zenfs_tool_df() {
   Status s;
-  ZonedBlockDevice *zbd = zbd_open(true);
+  ZonedBlockDevice *zbd = zbd_open(true, false);
   if (zbd == nullptr) return 1;
 
   ZenFS *zenFS;
@@ -357,10 +361,18 @@ int zenfs_tool_backup() {
   ZonedBlockDevice *zbd;
   ZenFS *zenFS;
 
-  zbd = zbd_open(false);
+  zbd = zbd_open(true, true);
+  if (zbd == nullptr) {
+    if (FLAGS_force) {
+      fprintf(stderr, "WARNING: attempting to back up a zoned block device in use! "
+                      "Expect data loss and corruption.\n");
+      zbd = zbd_open(true, false);
+    }
+  }
+
   if (zbd == nullptr) return 1;
 
-  status = zenfs_mount(zbd, &zenFS, false);
+  status = zenfs_mount(zbd, &zenFS, true);
   if (!status.ok()) {
     fprintf(stderr, "Failed to mount filesystem, error: %s\n",
             status.ToString().c_str());
@@ -398,7 +410,7 @@ int zenfs_tool_restore() {
 
   ReadWriteLifeTimeHints();
 
-  zbd = zbd_open(false);
+  zbd = zbd_open(false, true);
   if (zbd == nullptr) return 1;
 
   status = zenfs_mount(zbd, &zenFS, false);
@@ -420,7 +432,7 @@ int zenfs_tool_restore() {
 
 int zenfs_tool_dump() {
   Status s;
-  ZonedBlockDevice *zbd = zbd_open(true);
+  ZonedBlockDevice *zbd = zbd_open(true, false);
   if (zbd == nullptr) return 1;
 
   ZenFS *zenFS;
