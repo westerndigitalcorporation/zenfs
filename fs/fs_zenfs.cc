@@ -1017,9 +1017,9 @@ Status ZenFS::MkFS(std::string aux_fs_path, uint32_t finish_threshold) {
 
   log.reset(new ZenMetaLog(zbd_, meta_zone));
 
-  Superblock* super = new Superblock(zbd_, aux_fs_path, finish_threshold);
+  Superblock super(zbd_, aux_fs_path, finish_threshold);
   std::string super_string;
-  super->EncodeTo(&super_string);
+  super.EncodeTo(&super_string);
 
   s = log->AddRecord(super_string);
   if (!s.ok()) return std::move(s);
@@ -1095,13 +1095,18 @@ Status NewZenFS(FileSystem** fs, const std::string& bdevname) {
 
 std::map<std::string, std::string> ListZenFileSystems() {
   std::map<std::string, std::string> zenFileSystems;
-  DIR* dir = opendir("/sys/class/block");
+  auto closedirDeleter = [](DIR* d) {
+    if (d != nullptr) closedir(d);
+  };
+  std::unique_ptr<DIR, decltype(closedirDeleter)> dir{
+      opendir("/sys/class/block"), std::move(closedirDeleter)};
   struct dirent* entry;
 
-  while (NULL != (entry = readdir(dir))) {
+  while (NULL != (entry = readdir(dir.get()))) {
     if (entry->d_type == DT_LNK) {
       std::string zbdName = std::string(entry->d_name);
-      ZonedBlockDevice* zbd = new ZonedBlockDevice(zbdName, nullptr);
+      std::unique_ptr<ZonedBlockDevice> zbd{
+          new ZonedBlockDevice(zbdName, nullptr)};
       IOStatus zbd_status = zbd->Open(true, false);
 
       if (zbd_status.ok()) {
@@ -1113,7 +1118,7 @@ std::map<std::string, std::string> ListZenFileSystems() {
         for (const auto z : metazones) {
           Superblock super_block;
           std::unique_ptr<ZenMetaLog> log;
-          log.reset(new ZenMetaLog(zbd, z));
+          log.reset(new ZenMetaLog(zbd.get(), z));
 
           if (!log->ReadRecord(&super_record, &scratch).ok()) continue;
           s = super_block.DecodeFrom(&super_record);
@@ -1130,8 +1135,6 @@ std::map<std::string, std::string> ListZenFileSystems() {
             break;
           }
         }
-
-        delete zbd;
         continue;
       }
     }
