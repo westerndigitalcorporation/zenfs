@@ -456,8 +456,8 @@ int zenfs_tool_dump() {
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char **argv) {
-  gflags::SetUsageMessage(std::string("\nUSAGE:\n") + std::string(argv[0]) +
-                  +" <command> [OPTIONS]...\nCommands: mkfs, list, ls-uuid, df, backup, restore");
+  gflags::SetUsageMessage(std::string("\nUSAGE:\n") + argv[0] +
+                  +" <command> [OPTIONS]...\nCommands: mkfs, list, ls-uuid, df, backup, restore, dump");
   if (argc < 2) {
     fprintf(stderr, "You need to specify a command.\n");
     return 1;
