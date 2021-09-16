@@ -113,6 +113,6 @@ ZenFS uses clang-format with Google code style. You may run the following comman
 before submitting a PR.
 
 ```bash
-clang-format-11 -n -Werror --style=file fs/* # Check for style issues
-clang-format-11 -i --style=file fs/*         # Auto-fix the style issues
+clang-format-11 -n -Werror --style=file fs/* util/zenfs.cc # Check for style issues
+clang-format-11 -i --style=file fs/* util/zenfs.cc         # Auto-fix the style issues
 ```
