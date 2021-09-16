@@ -3,20 +3,20 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
-#include <cstdio>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 #include <dirent.h>
-#include <memory>
-#include <iostream>
-#include <fstream>
-#include <streambuf>
-#include <sstream>
-
+#include <fcntl.h>
+#include <gflags/gflags.h>
 #include <rocksdb/file_system.h>
 #include <rocksdb/plugin/zenfs/fs/fs_zenfs.h>
-#include <gflags/gflags.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+#include <cstdio>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <sstream>
+#include <streambuf>
 
 using GFLAGS_NAMESPACE::ParseCommandLineFlags;
 using GFLAGS_NAMESPACE::RegisterFlagValidator;
@@ -25,11 +25,12 @@ using GFLAGS_NAMESPACE::SetUsageMessage;
 DEFINE_string(zbd, "", "Path to a zoned block device.");
 DEFINE_string(aux_path, "",
               "Path for auxiliary file storage (log and lock files).");
-DEFINE_bool(force, false, "Force the action. May result in data loss.\n"
-                          "If used with mkfs, data will be lost on an existing "
-                          "file system. If used with backup, data copied from "
-                          "the drive will likely be incomplete and/or corrupt "
-                          "- only use this for testing purposes.");
+DEFINE_bool(force, false,
+            "Force the action. May result in data loss.\n"
+            "If used with mkfs, data will be lost on an existing "
+            "file system. If used with backup, data copied from "
+            "the drive will likely be incomplete and/or corrupt "
+            "- only use this for testing purposes.");
 DEFINE_string(path, "", "File path");
 DEFINE_int32(finish_threshold, 0, "Finish used zones if less than x% left");
 DEFINE_string(restore_path, "", "Path to restore files");
@@ -38,7 +39,8 @@ DEFINE_string(backup_path, "", "Path to backup files");
 namespace ROCKSDB_NAMESPACE {
 
 std::unique_ptr<ZonedBlockDevice> zbd_open(bool readonly, bool exclusive) {
-  std::unique_ptr<ZonedBlockDevice> zbd{new ZonedBlockDevice(FLAGS_zbd, nullptr)};
+  std::unique_ptr<ZonedBlockDevice> zbd{
+      new ZonedBlockDevice(FLAGS_zbd, nullptr)};
   IOStatus open_status = zbd->Open(readonly, exclusive);
 
   if (!open_status.ok()) {
@@ -52,10 +54,12 @@ std::unique_ptr<ZonedBlockDevice> zbd_open(bool readonly, bool exclusive) {
 
 // Here we pass 'zbd' by non-const reference to be able to pass its ownership
 // to 'zenFS'
-Status zenfs_mount(std::unique_ptr<ZonedBlockDevice> &zbd, std::unique_ptr<ZenFS> *zenFS, bool readonly) {
+Status zenfs_mount(std::unique_ptr<ZonedBlockDevice> &zbd,
+                   std::unique_ptr<ZenFS> *zenFS, bool readonly) {
   Status s;
 
-  std::unique_ptr<ZenFS> localZenFS{new ZenFS(zbd.release(), FileSystem::Default(), nullptr)};
+  std::unique_ptr<ZenFS> localZenFS{
+      new ZenFS(zbd.release(), FileSystem::Default(), nullptr)};
   s = localZenFS->Mount(readonly);
   if (!s.ok()) {
     localZenFS.reset();
@@ -67,7 +71,7 @@ Status zenfs_mount(std::unique_ptr<ZonedBlockDevice> &zbd, std::unique_ptr<ZenFS
 
 int zenfs_tool_mkfs() {
   Status s;
-  DIR* aux_dir;
+  DIR *aux_dir;
 
   if (FLAGS_aux_path.empty()) {
     fprintf(stderr, "You need to specify --aux_path\n");
@@ -114,7 +118,8 @@ int zenfs_tool_mkfs() {
   return 0;
 }
 
-void list_children(const std::unique_ptr<ZenFS> &zenFS, const std::string &path) {
+void list_children(const std::unique_ptr<ZenFS> &zenFS,
+                   const std::string &path) {
   IOOptions opts;
   IODebugContext dbg;
   std::vector<std::string> result;
@@ -122,11 +127,12 @@ void list_children(const std::unique_ptr<ZenFS> &zenFS, const std::string &path)
   IOStatus io_status = zenFS->GetChildren(path, opts, &result, &dbg);
 
   if (!io_status.ok()) {
-    fprintf(stderr, "Error: %s %s\n", io_status.ToString().c_str(), path.c_str());
+    fprintf(stderr, "Error: %s %s\n", io_status.ToString().c_str(),
+            path.c_str());
     return;
   }
 
-  for (const auto& f : result) {
+  for (const auto &f : result) {
     io_status = zenFS->GetFileSize(path + f, opts, &size, &dbg);
     if (!io_status.ok()) {
       fprintf(stderr, "Failed to get size of file %s\n", f.c_str());
@@ -135,12 +141,13 @@ void list_children(const std::unique_ptr<ZenFS> &zenFS, const std::string &path)
     uint64_t mtime;
     io_status = zenFS->GetFileModificationTime(path + f, opts, &mtime, &dbg);
     if (!io_status.ok()) {
-      fprintf(stderr, "Failed to get modification time of file %s, error = %s\n",
-                                             f.c_str(), io_status.ToString().c_str());
+      fprintf(stderr,
+              "Failed to get modification time of file %s, error = %s\n",
+              f.c_str(), io_status.ToString().c_str());
       return;
     }
     time_t mt = (time_t)mtime;
-    struct tm* fct = std::localtime(&mt);
+    struct tm *fct = std::localtime(&mt);
     char buf[32];
     std::strftime(buf, sizeof(buf), "%b %d %Y %H:%M:%S", fct);
     std::string mdtime;
@@ -150,8 +157,7 @@ void list_children(const std::unique_ptr<ZenFS> &zenFS, const std::string &path)
   }
 }
 
-void format_path(std::string &path)
-{
+void format_path(std::string &path) {
   std::size_t pos = path.find('/', 0);
   while (pos != std::string::npos) {
     while (path.compare(pos + 1, 1, "/") == 0) {
@@ -160,11 +166,9 @@ void format_path(std::string &path)
     pos = path.find('/', pos + 1);
   }
 
-  if (path.front() == '/')
-    path.erase(0, 1);
+  if (path.front() == '/') path.erase(0, 1);
 
-  if (path.back() != '/')
-    path = path + "/";
+  if (path.back() != '/') path = path + "/";
 }
 
 int zenfs_tool_list() {
@@ -206,9 +210,11 @@ int zenfs_tool_df() {
   /* Avoid divide by zero */
   if (used == 0) used = 1;
 
-  fprintf(stdout, "Free: %lu MB\nUsed: %lu MB\nReclaimable: %lu MB\nSpace amplification: %lu%%\n",
-              free / (1024 * 1024), used / (1024 * 1024), reclaimable / (1024 * 1024),
-              (100 * reclaimable) / used);
+  fprintf(stdout,
+          "Free: %lu MB\nUsed: %lu MB\nReclaimable: %lu MB\nSpace "
+          "amplification: %lu%%\n",
+          free / (1024 * 1024), used / (1024 * 1024),
+          reclaimable / (1024 * 1024), (100 * reclaimable) / used);
 
   return 0;
 }
@@ -216,7 +222,7 @@ int zenfs_tool_df() {
 int zenfs_tool_lsuuid() {
   std::map<std::string, std::string> zenFileSystems = ListZenFileSystems();
 
-  for (const auto &p: zenFileSystems)
+  for (const auto &p : zenFileSystems)
     fprintf(stdout, "%s\t%s\n", p.first.c_str(), p.second.c_str());
 
   return 0;
@@ -226,8 +232,8 @@ static std::map<std::string, Env::WriteLifeTimeHint> wlth_map;
 
 Env::WriteLifeTimeHint GetWriteLifeTimeHint(const std::string &filename) {
   if (wlth_map.find(filename) != wlth_map.end()) {
-      return wlth_map[filename];
-   }
+    return wlth_map[filename];
+  }
   return Env::WriteLifeTimeHint::WLTH_NOT_SET;
 }
 
@@ -240,7 +246,7 @@ int SaveWriteLifeTimeHints() {
   }
 
   for (auto it = wlth_map.begin(); it != wlth_map.end(); it++) {
-      wlth_file << it->first << "\t" << it->second << "\n";
+    wlth_file << it->first << "\t" << it->second << "\n";
   }
 
   wlth_file.close();
@@ -258,7 +264,7 @@ void ReadWriteLifeTimeHints() {
   std::string filename;
   uint32_t lth;
 
-  while ( wlth_file >> filename >> lth ) {
+  while (wlth_file >> filename >> lth) {
     wlth_map.insert(std::make_pair(filename, (Env::WriteLifeTimeHint)lth));
     fprintf(stdout, "read: %s %u \n", filename.c_str(), lth);
   }
@@ -266,7 +272,8 @@ void ReadWriteLifeTimeHints() {
   wlth_file.close();
 }
 
-IOStatus zenfs_tool_copy_file(FileSystem *f_fs, const std::string &f, FileSystem *t_fs, const std::string &t) {
+IOStatus zenfs_tool_copy_file(FileSystem *f_fs, const std::string &f,
+                              FileSystem *t_fs, const std::string &t) {
   FileOptions fopts;
   IOOptions iopts;
   IODebugContext dbg;
@@ -275,17 +282,23 @@ IOStatus zenfs_tool_copy_file(FileSystem *f_fs, const std::string &f, FileSystem
   std::unique_ptr<FSWritableFile> t_file;
   size_t buffer_sz = 1024 * 1024;
   uint64_t to_copy;
- 
+
   fprintf(stdout, "%s\n", f.c_str());
- 
+
   s = f_fs->GetFileSize(f, iopts, &to_copy, &dbg);
-  if (!s.ok()) { return s; }
+  if (!s.ok()) {
+    return s;
+  }
 
   s = f_fs->NewSequentialFile(f, fopts, &f_file, &dbg);
-  if (!s.ok()) { return s; }
-  
+  if (!s.ok()) {
+    return s;
+  }
+
   s = t_fs->NewWritableFile(t, fopts, &t_file, &dbg);
-  if (!s.ok()) { return s; }
+  if (!s.ok()) {
+    return s;
+  }
 
   t_file->SetWriteLifeTimeHint(GetWriteLifeTimeHint(t));
 
@@ -297,57 +310,70 @@ IOStatus zenfs_tool_copy_file(FileSystem *f_fs, const std::string &f, FileSystem
   while (to_copy > 0) {
     size_t chunk_sz = to_copy;
     Slice chunk_slice;
-  
-    if (chunk_sz > buffer_sz)
-      chunk_sz = buffer_sz;
-  
+
+    if (chunk_sz > buffer_sz) chunk_sz = buffer_sz;
+
     s = f_file->Read(chunk_sz, iopts, &chunk_slice, buffer.get(), &dbg);
-    if (!s.ok()) { break; }
-    
+    if (!s.ok()) {
+      break;
+    }
+
     s = t_file->Append(chunk_slice, iopts, &dbg);
     to_copy -= chunk_slice.size();
   }
-  
-  if (!s.ok()) { return s; }
-  
+
+  if (!s.ok()) {
+    return s;
+  }
+
   return t_file->Fsync(iopts, &dbg);
 }
 
-IOStatus zenfs_tool_copy_dir(FileSystem *f_fs, const std::string &f_dir, FileSystem *t_fs, const std::string &t_dir) {
+IOStatus zenfs_tool_copy_dir(FileSystem *f_fs, const std::string &f_dir,
+                             FileSystem *t_fs, const std::string &t_dir) {
   IOOptions opts;
   IODebugContext dbg;
   IOStatus s;
   std::vector<std::string> files;
 
   s = f_fs->GetChildren(f_dir, opts, &files, &dbg);
-  if (!s.ok()) { return s; }
-  
-  for (const auto& f : files) {
+  if (!s.ok()) {
+    return s;
+  }
+
+  for (const auto &f : files) {
     std::string filename = f_dir + f;
     bool is_dir;
 
-    if (f == "." || f == ".." || f == "write_lifetime_hints.dat")
-      continue;
+    if (f == "." || f == ".." || f == "write_lifetime_hints.dat") continue;
 
     s = f_fs->IsDirectory(filename, opts, &is_dir, &dbg);
-    if (!s.ok()) { return s; }
-    
+    if (!s.ok()) {
+      return s;
+    }
+
     std::string dest_filename;
 
-    if (t_dir == "") {  
-       dest_filename = f;
+    if (t_dir == "") {
+      dest_filename = f;
     } else {
-       dest_filename = t_dir + "/" + f; 
+      dest_filename = t_dir + "/" + f;
     }
-   
+
     if (is_dir) {
       s = t_fs->CreateDir(dest_filename, opts, &dbg);
-      if (!s.ok()) { return s; }
-      s =  zenfs_tool_copy_dir(f_fs, filename + "/", t_fs, dest_filename);
-      if (!s.ok()) { return s; }
+      if (!s.ok()) {
+        return s;
+      }
+      s = zenfs_tool_copy_dir(f_fs, filename + "/", t_fs, dest_filename);
+      if (!s.ok()) {
+        return s;
+      }
     } else {
       s = zenfs_tool_copy_file(f_fs, filename, t_fs, dest_filename);
-      if (!s.ok()) { return s; }
+      if (!s.ok()) {
+        return s;
+      }
     }
   }
 
@@ -361,8 +387,9 @@ int zenfs_tool_backup() {
 
   if (!zbd) {
     if (FLAGS_force) {
-      fprintf(stderr, "WARNING: attempting to back up a zoned block device in use! "
-                      "Expect data loss and corruption.\n");
+      fprintf(stderr,
+              "WARNING: attempting to back up a zoned block device in use! "
+              "Expect data loss and corruption.\n");
       zbd = zbd_open(true, false);
     }
   }
@@ -378,13 +405,15 @@ int zenfs_tool_backup() {
   }
 
   if (!FLAGS_backup_path.empty() && FLAGS_backup_path.back() != '/') {
-    std::string dest_filename = FLAGS_path + "/" + 
-                                FLAGS_backup_path.substr(FLAGS_backup_path.find_last_of('/')+1);
-    io_status = zenfs_tool_copy_file(zenFS.get(), FLAGS_backup_path, FileSystem::Default().get(),
-                                     dest_filename);
+    std::string dest_filename =
+        FLAGS_path + "/" +
+        FLAGS_backup_path.substr(FLAGS_backup_path.find_last_of('/') + 1);
+    io_status =
+        zenfs_tool_copy_file(zenFS.get(), FLAGS_backup_path,
+                             FileSystem::Default().get(), dest_filename);
   } else {
-    io_status = zenfs_tool_copy_dir(zenFS.get(), FLAGS_backup_path, FileSystem::Default().get(),
-                                    FLAGS_path);
+    io_status = zenfs_tool_copy_dir(zenFS.get(), FLAGS_backup_path,
+                                    FileSystem::Default().get(), FLAGS_path);
   }
   if (!io_status.ok()) {
     fprintf(stderr, "Copy failed, error: %s\n", io_status.ToString().c_str());
@@ -400,7 +429,8 @@ int zenfs_tool_restore() {
   IOStatus io_status;
 
   if (FLAGS_restore_path.empty()) {
-    fprintf(stderr, "Error: Specify --restore_path=<db path> to restore the db\n");
+    fprintf(stderr,
+            "Error: Specify --restore_path=<db path> to restore the db\n");
     return 1;
   }
 
@@ -416,9 +446,9 @@ int zenfs_tool_restore() {
             status.ToString().c_str());
     return 1;
   }
-  
-  io_status = zenfs_tool_copy_dir(FileSystem::Default().get(), FLAGS_path, zenFS.get(),
-                                  FLAGS_restore_path);
+
+  io_status = zenfs_tool_copy_dir(FileSystem::Default().get(), FLAGS_path,
+                                  zenFS.get(), FLAGS_restore_path);
   if (!io_status.ok()) {
     fprintf(stderr, "Copy failed, error: %s\n", io_status.ToString().c_str());
     return 1;
