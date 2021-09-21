@@ -1,0 +1,105 @@
+.\"  SPDX-License-Identifier: Apache License 2.0 OR GPL-2.0
+.\"
+.\"  SPDX-FileCopyrightText: 2021, Western Digital Corporation or its affiliates.
+.\"  Written by Aravind Ramesh <aravind.ramesh@wdc.com>
+.\"
+.TH zenfs 8 "Aug 09 2021" "ZenFS Utils"
+.SH NAME
+zenfs \- Create and manage ZenFS, a file system plugin for RocksDB,
+      on a zoned block device.
+
+.SH SYNOPSIS
+.BI zenfs " [sub-command] --zbd=<zoned-block-device> [args]"
+
+.SH DESCRIPTION
+.B zenfs
+is used to create and manage ZenFS file system on a zoned block device.
+
+.SH SUB\-COMMANDS
+
+zenfs has the following sub-commands.
+
+.TP
+.B mkfs
+Format the zoned block device to create a new ZenFS file system.
+
+.TP
+.B list
+List files in the specified path in the file system.
+
+.TP
+.B ls-uuid
+List the uuid of the file system.
+
+.TP
+.B df
+Display disk free statistics.
+
+.TP
+.B backup
+Backup ZenFS file system files and directories on to different file system.
+
+.TP
+.B restore
+Restore files from a backup into ZenFS file system.
+
+.TP
+.B dump
+Dump ZenFS metadata in JSON format.
+
+.SH OPTIONS
+
+.TP
+.BR \-\-aux_path
+Path for auxiliary file storage.
+
+.TP
+.BR \-\-path
+Path for specified operation.
+
+.TP
+.BR \-\-restore_path
+Path within ZenFS file system to restore files
+
+.TP
+.B \-\-force
+Create ZenFS filesystem on an existing ZenFS filesystem (Note: previous fs data will be lost).
+
+.SH EXAMPLES
+
+.TP
+.B zenfs mkfs --zbd=nvme0n1 --aux_path=/tmp/aux
+Format a zoned block device with ZenFS filesystem
+
+.TP
+.B zenfs list --zbd=nvme0n1 --path=rocksdbtest/dbbench
+List the files in the file system.
+
+.TP
+.B zenfs df --zbd=nvme0n1
+Display disk free statistics.
+
+.TP
+.B zenfs backup --zbd=nvme0n1 --path=/tmp/zenfs_backup_dir
+Backup zenfs filesystem.
+
+.TP
+.B zenfs restore --zbd=nvme0n1 --path=/tmp/zenfs_backup_dir --restore_path=rocksdbtest/dbbench
+Restore zenfs filesystem from a backup.
+
+.TP
+.B zenfs dump --zbd=nvme0n1
+Dump ZenFS filesystem metadata in JSON format.
+
+.SH AUTHOR
+.TP
+zenfs has been written by Hans Holmberg <hans.holmberg@wdc.com>.
+
+.SH COPYRIGHT
+Licensed under both GPL-2.0 and Apache License 2.0
+.PP
+(c) 2020-2021 Western Digital Corporation and its affiliates
+.PP
+
+.SH REPORTING BUGS
+Patches and issues may be submitted to the official repository at \fIhttps://github.com/westerndigitalcorporation/zenfs\fR
