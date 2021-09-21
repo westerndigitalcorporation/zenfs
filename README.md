@@ -12,7 +12,8 @@ in terms of throughput, tail latencies and disk endurance.
 
 ZenFS depends on[ libzbd ](https://github.com/westerndigitalcorporation/libzbd)
 and Linux kernel 5.4 or later to perform zone management operations. To use
-ZenFS on SSDs with Zoned Namespaces kernel 5.9 or later is required.
+ZenFS on SSDs with Zoned Namespaces, Linux kernel 5.9 or later is required.
+ZenFS works with RocksDB version v6.19.3 or later.
 
 # Getting started
 
@@ -21,7 +22,7 @@ ZenFS on SSDs with Zoned Namespaces kernel 5.9 or later is required.
 Download, build and install libzbd. See the libzbd [ README ](https://github.com/westerndigitalcorporation/libzbd/blob/master/README.md) 
 for instructions.
 
-Download rockksdb and the zenfs projects:
+Download rocksdb and the zenfs projects:
 ```
 $ git clone https://github.com/facebook/rocksdb.git
 $ cd rocksdb
@@ -85,7 +86,7 @@ ZenFS io is done through normal pread/pwrite calls.
 
 Files are mapped into into a set of extents:
 
-* Extents are block-aligned, continious regions on the block device
+* Extents are block-aligned, continuous regions on the block device
 * Extents do not span across zones
 * A zone may contain more than one extent
 * Extents from different files may share zones
