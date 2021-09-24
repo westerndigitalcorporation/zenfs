@@ -59,6 +59,7 @@ enum ZoneFileTag : uint32_t {
   kWriteLifeTimeHint = 4,
   kExtent = 5,
   kModificationTime = 6,
+  kActiveExtentStart = 7,
 };
 
 void ZoneFile::EncodeTo(std::string* output, uint32_t extent_start) {
@@ -84,8 +85,15 @@ void ZoneFile::EncodeTo(std::string* output, uint32_t extent_start) {
 
   PutFixed32(output, kModificationTime);
   PutFixed64(output, (uint64_t)m_time_);
-  /* We're not encoding active zone and extent start
-   * as files will always be read-only after mount */
+
+  /* We store the current extent start - if there is a crash
+   * we know that this file wrote the data starting from
+   * active extent start up to the zone write pointer.
+   * We don't need to store the active zone as we can look it up
+   * from extent_start_ */
+  PutFixed32(output, kActiveExtentStart);
+  PutFixed64(output, extent_start_);
+
 }
 
 void ZoneFile::EncodeJson(std::ostream& json_stream) {
@@ -159,6 +167,12 @@ Status ZoneFile::DecodeFrom(Slice* input) {
         if (!GetFixed64(input, &ct))
           return Status::Corruption("ZoneFile", "Missing creation time");
         m_time_ = (time_t)ct;
+        break;
+      case kActiveExtentStart:
+        uint64_t es;
+        if (!GetFixed64(input, &es))
+          return Status::Corruption("ZoneFile", "Active extent start");
+        extent_start_ = es;
         break;
       default:
         return Status::Corruption("ZoneFile", "Unexpected tag");
