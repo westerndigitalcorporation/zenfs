@@ -363,6 +363,16 @@ void ZoneFile::PushExtent() {
   extent_filepos_ = fileSize;
 }
 
+IOStatus ZoneFile::AllocateNewZone() {
+    active_zone_ = zbd_->AllocateZone(lifetime_);
+    if (!active_zone_) {
+      return IOStatus::NoSpace("Zone allocation failure\n");
+    }
+    extent_start_ = active_zone_->wp_;
+    extent_filepos_ = fileSize;
+    return IOStatus::OK();
+}
+
 /* Assumes that data and size are block aligned */
 IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
   uint32_t left = data_size;
@@ -370,25 +380,19 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
   IOStatus s;
 
   if (active_zone_ == NULL) {
-    active_zone_ = zbd_->AllocateZone(lifetime_);
-    if (!active_zone_) {
-      return IOStatus::NoSpace("Zone allocation failure\n");
-    }
-    extent_start_ = active_zone_->wp_;
-    extent_filepos_ = fileSize;
+    s = AllocateNewZone();
+    if (!s.ok())
+      return s;
   }
 
   while (left) {
     if (active_zone_->capacity_ == 0) {
       PushExtent();
-
       active_zone_->CloseWR();
-      active_zone_ = zbd_->AllocateZone(lifetime_);
-      if (!active_zone_) {
-        return IOStatus::NoSpace("Zone allocation failure\n");
-      }
-      extent_start_ = active_zone_->wp_;
-      extent_filepos_ = fileSize;
+
+      s = AllocateNewZone();
+      if (!s.ok())
+        return s;
     }
 
     wr_size = left;
