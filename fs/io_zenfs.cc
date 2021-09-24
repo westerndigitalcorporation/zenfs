@@ -242,11 +242,9 @@ ZoneFile::~ZoneFile() {
 }
 
 IOStatus ZoneFile::CloseWR() {
-  IOStatus s = IOStatus::OK();
-
-  s = CloseActiveZone();
+  IOStatus s = CloseActiveZone();
   open_for_wr_ = false;
-
+  metadata_writer_ = NULL;
   return s;
 }
 
@@ -267,9 +265,20 @@ IOStatus ZoneFile::CloseActiveZone() {
   return s;
 }
 
-void ZoneFile::OpenWR() { open_for_wr_ = true; }
+void ZoneFile::OpenWR(MetadataWriter* metadata_writer) {
+  open_for_wr_ = true;
+  metadata_writer_ = metadata_writer;
+}
 
 bool ZoneFile::IsOpenForWR() { return open_for_wr_; }
+
+IOStatus ZoneFile::PersistMetadata() {
+  /* If the file is open read-only, all metadata is up to date on disk */
+  if (!open_for_wr_) return IOStatus::OK();
+
+  assert(metadata_writer_ != NULL);
+  return metadata_writer_->Persist(this);
+}
 
 ZoneExtent* ZoneFile::GetExtent(uint64_t file_offset, uint64_t* dev_offset) {
   for (unsigned int i = 0; i < extents_.size(); i++) {
@@ -389,6 +398,23 @@ void ZoneFile::PushExtent() {
   extent_filepos_ = fileSize;
 }
 
+IOStatus ZoneFile::AllocateNewZone() {
+  Zone* zone;
+  IOStatus s = zbd_->AllocateIOZone(lifetime_, io_type_, &zone);
+
+  if (!s.ok()) return s;
+  if (!zone) {
+    return IOStatus::NoSpace("Zone allocation failure\n");
+  }
+  SetActiveZone(zone);
+  extent_start_ = active_zone_->wp_;
+  extent_filepos_ = fileSize;
+
+  /* Persist metadata so we can recover the active extent using
+     the zone write pointer in case there is a crash before syncing */
+  return PersistMetadata();
+}
+
 /* Assumes that data and size are block aligned */
 IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
   uint32_t left = data_size;
@@ -396,18 +422,8 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
   IOStatus s = IOStatus::OK();
 
   if (!active_zone_) {
-    Zone* zone = nullptr;
-    s = zbd_->AllocateIOZone(lifetime_, io_type_, &zone);
+    s = AllocateNewZone();
     if (!s.ok()) return s;
-
-    if (!zone) {
-      return IOStatus::NoSpace(
-          "Out of space: Zone allocation failure while setting active zone");
-    }
-
-    SetActiveZone(zone);
-    extent_start_ = active_zone_->wp_;
-    extent_filepos_ = fileSize;
   }
 
   while (left) {
@@ -419,20 +435,8 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
         return s;
       }
 
-      Zone* zone = nullptr;
-      s = zbd_->AllocateIOZone(lifetime_, io_type_, &zone);
+      s = AllocateNewZone();
       if (!s.ok()) return s;
-
-      if (!zone) {
-        return IOStatus::NoSpace(
-            "Out of space: Zone allocation failure while replacing active "
-            "zone");
-      }
-
-      SetActiveZone(zone);
-
-      extent_start_ = active_zone_->wp_;
-      extent_filepos_ = fileSize;
     }
 
     wr_size = left;
@@ -490,8 +494,7 @@ ZonedWritableFile::ZonedWritableFile(ZonedBlockDevice* zbd, bool _buffered,
     assert(buffer != nullptr);
   }
 
-  metadata_writer_ = metadata_writer;
-  zoneFile_->OpenWR();
+  zoneFile_->OpenWR(metadata_writer);
 }
 
 ZonedWritableFile::~ZonedWritableFile() {
@@ -503,7 +506,7 @@ ZonedWritableFile::~ZonedWritableFile() {
   }
 }
 
-ZonedWritableFile::MetadataWriter::~MetadataWriter() {}
+MetadataWriter::~MetadataWriter() {}
 
 IOStatus ZonedWritableFile::Truncate(uint64_t size,
                                      const IOOptions& /*options*/,
@@ -530,8 +533,7 @@ IOStatus ZonedWritableFile::Fsync(const IOOptions& /*options*/,
     return s;
   }
   zoneFile_->PushExtent();
-
-  return metadata_writer_->Persist(zoneFile_);
+  return zoneFile_->PersistMetadata();
 }
 
 IOStatus ZonedWritableFile::Sync(const IOOptions& options,
