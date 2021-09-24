@@ -372,44 +372,48 @@ void ZoneFile::PushExtent() {
   extent_filepos_ = fileSize;
 }
 
+IOStatus ZoneFile::AllocateNewZone() {
+    Zone *zone = zbd_->AllocateIOZone(lifetime_, io_type_);
+    if (!zone) {
+      return IOStatus::NoSpace("Zone allocation failure\n");
+    }
+    SetActiveZone(zone);
+    extent_start_ = active_zone_->wp_;
+    extent_filepos_ = fileSize;
+    return IOStatus::OK();
+}
+
 /* Assumes that data and size are block aligned */
 IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
   uint32_t left = data_size;
   uint32_t wr_size, offset = 0;
   IOStatus s;
 
-  if (!active_zone_) {
-    Zone* zone = zbd_->AllocateIOZone(lifetime_, io_type_);
-    if (!zone) {
-      return IOStatus::NoSpace(
-          "Out of space: Zone allocation failure while setting active zone");
-    }
-    SetActiveZone(zone);
-    extent_start_ = active_zone_->wp_;
-    extent_filepos_ = fileSize;
+  if (active_zone_ == NULL) {
+    s = AllocateNewZone();
+    if (!s.ok())
+      return s;
   }
 
   while (left) {
     if (active_zone_->capacity_ == 0) {
       PushExtent();
 
-      IOStatus status = active_zone_->Close();
+      bool full = active_zone_->IsFull();
+      s = active_zone_->Close();
       ReleaseActiveZone();
-      if (status.ok()) {
+      if (s.ok()) {
         zbd_->PutOpenIOZoneToken();
-        zbd_->PutActiveIOZoneToken();
+        if (full) {
+          zbd_->PutActiveIOZoneToken();
+        }
+      } else {
+        return s;
       }
 
-      Zone* zone = zbd_->AllocateIOZone(lifetime_, io_type_);
-      if (!zone) {
-        return IOStatus::NoSpace(
-            "Out of space: Zone allocation failure while replacing active "
-            "zone");
-      }
-      SetActiveZone(zone);
-
-      extent_start_ = active_zone_->wp_;
-      extent_filepos_ = fileSize;
+      s = AllocateNewZone();
+      if (!s.ok())
+        return s;
     }
 
     wr_size = left;
