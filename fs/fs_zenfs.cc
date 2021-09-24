@@ -393,7 +393,7 @@ IOStatus ZenFS::PersistRecord(std::string record) {
   return s;
 }
 
-IOStatus ZenFS::SyncFileMetadata(std::shared_ptr<ZoneFile> zoneFile) {
+IOStatus ZenFS::SyncFileMetadata(ZoneFile* zoneFile) {
   std::string fileRecord;
   std::string output;
   IOStatus s;
