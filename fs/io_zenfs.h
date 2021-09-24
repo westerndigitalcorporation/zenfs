@@ -40,12 +40,16 @@ class ZoneExtent {
 };
 
 class ZoneFile {
- protected:
+ private:
+  const uint64_t NO_EXTENT = 0xffffffffffffffff;
+
   ZonedBlockDevice* zbd_;
+
   std::vector<ZoneExtent*> extents_;
+
   Zone* active_zone_;
-  uint64_t extent_start_;
-  uint64_t extent_filepos_;
+  uint64_t extent_start_ = NO_EXTENT;
+  uint64_t extent_filepos_ = 0;
 
   Env::WriteLifeTimeHint lifetime_;
   IOType io_type_; /* Only used when writing */
@@ -53,7 +57,7 @@ class ZoneFile {
   std::string filename_;
   uint64_t file_id_;
 
-  uint32_t nr_synced_extents_;
+  uint32_t nr_synced_extents_ = 0;
   bool open_for_wr_ = false;
   time_t m_time_;
 
