@@ -39,6 +39,15 @@ class ZoneExtent {
   void EncodeJson(std::ostream& json_stream);
 };
 
+class ZoneFile;
+
+/* Interface for persisting metadata for files */
+class MetadataWriter {
+ public:
+  virtual ~MetadataWriter();
+  virtual IOStatus Persist(ZoneFile *zoneFile) = 0;
+};
+
 class ZoneFile {
 
  private:
@@ -62,6 +71,8 @@ class ZoneFile {
   bool open_for_wr_ = false;
   time_t m_time_;
 
+  MetadataWriter* metadata_writer_ = NULL;
+
  public:
 
   explicit ZoneFile(ZonedBlockDevice* zbd, std::string filename,
@@ -69,9 +80,10 @@ class ZoneFile {
 
   virtual ~ZoneFile();
 
-  void OpenWR();
+  void OpenWR(MetadataWriter* metadata_writer);
   IOStatus CloseWR();
   bool IsOpenForWR();
+  IOStatus PersistMetadata();
 
   IOStatus Append(void* data, int data_size, int valid_size);
   IOStatus SetWriteLifeTimeHint(Env::WriteLifeTimeHint lifetime);
@@ -117,12 +129,6 @@ class ZoneFile {
 
 class ZonedWritableFile : public FSWritableFile {
  public:
-  /* Interface for persisting metadata for files */
-  class MetadataWriter {
-   public:
-    virtual ~MetadataWriter();
-    virtual IOStatus Persist(std::shared_ptr<ZoneFile> zoneFile) = 0;
-  };
 
   explicit ZonedWritableFile(ZonedBlockDevice* zbd, bool buffered,
                              std::shared_ptr<ZoneFile> zoneFile,

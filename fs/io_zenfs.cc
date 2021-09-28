@@ -243,11 +243,9 @@ ZoneFile::~ZoneFile() {
 }
 
 IOStatus ZoneFile::CloseWR() {
-  IOStatus s = IOStatus::OK();
-
-  s = CloseActiveZone();
+  IOStatus s = CloseActiveZone();
   open_for_wr_ = false;
-
+  metadata_writer_ = NULL;
   return s;
 }
 
@@ -268,9 +266,23 @@ IOStatus ZoneFile::CloseActiveZone() {
   return s;
 }
 
-void ZoneFile::OpenWR() { open_for_wr_ = true; }
+void ZoneFile::OpenWR(MetadataWriter *metadata_writer)
+{
+ open_for_wr_ = true;
+ metadata_writer_ = metadata_writer;
+}
 
 bool ZoneFile::IsOpenForWR() { return open_for_wr_; }
+
+IOStatus ZoneFile::PersistMetadata() {
+
+  /* If the file is open read-only, all metadata is up to date on disk */
+  if (!open_for_wr_)
+    return IOStatus::OK();
+
+  assert(metadata_writer_ != NULL);
+  return metadata_writer_->Persist(this);
+}
 
 ZoneExtent* ZoneFile::GetExtent(uint64_t file_offset, uint64_t* dev_offset) {
   for (unsigned int i = 0; i < extents_.size(); i++) {
@@ -402,7 +414,10 @@ IOStatus ZoneFile::AllocateNewZone() {
     SetActiveZone(zone);
     extent_start_ = active_zone_->wp_;
     extent_filepos_ = fileSize;
-    return IOStatus::OK();
+
+    /* Persist metadata so we can recover the active extent using
+       the zone write pointer in case there is a crash before syncing */
+    return PersistMetadata();
 }
 
 /* Assumes that data and size are block aligned */
@@ -486,8 +501,7 @@ ZonedWritableFile::ZonedWritableFile(ZonedBlockDevice* zbd, bool _buffered,
     assert(buffer != nullptr);
   }
 
-  metadata_writer_ = metadata_writer;
-  zoneFile_->OpenWR();
+  zoneFile_->OpenWR(metadata_writer);
 }
 
 ZonedWritableFile::~ZonedWritableFile() {
@@ -499,7 +513,7 @@ ZonedWritableFile::~ZonedWritableFile() {
   }
 }
 
-ZonedWritableFile::MetadataWriter::~MetadataWriter() {}
+MetadataWriter::~MetadataWriter() {}
 
 IOStatus ZonedWritableFile::Truncate(uint64_t size,
                                      const IOOptions& /*options*/,
@@ -519,8 +533,8 @@ IOStatus ZonedWritableFile::Fsync(const IOOptions& /*options*/,
     return s;
   }
   zoneFile_->PushExtent();
+  return zoneFile_->PersistMetadata();
 
-  return metadata_writer_->Persist(zoneFile_);
 }
 
 IOStatus ZonedWritableFile::Sync(const IOOptions& options,
