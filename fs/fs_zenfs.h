@@ -112,7 +112,7 @@ class ZenFS : public FileSystemWrapper {
 
   std::shared_ptr<Logger> GetLogger() { return logger_; }
 
-  struct MetadataWriter : public ZonedWritableFile::MetadataWriter {
+  struct ZenFSMetadataWriter : public MetadataWriter {
     ZenFS* zenFS;
     IOStatus Persist(ZoneFile* zoneFile) {
       Debug(zenFS->GetLogger(), "Syncing metadata for: %s",
@@ -121,7 +121,7 @@ class ZenFS : public FileSystemWrapper {
     }
   };
 
-  MetadataWriter metadata_writer_;
+  ZenFSMetadataWriter metadata_writer_;
 
   enum ZenFSTag : uint32_t {
     kCompleteFilesSnapshot = 1,
