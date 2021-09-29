@@ -385,7 +385,10 @@ IOStatus ZoneFile::AllocateNewZone() {
     }
     extent_start_ = active_zone_->wp_;
     extent_filepos_ = fileSize;
-    return IOStatus::OK();
+
+    /* Persist metadata so we can recover the active extent using
+       the zone write pointer in case there is a crash before syncing */
+    return PersistMetadata();
 }
 
 /* Assumes that data and size are block aligned */
