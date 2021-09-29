@@ -28,7 +28,7 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-ZoneExtent::ZoneExtent(uint64_t start, uint32_t length, Zone* zone)
+ZoneExtent::ZoneExtent(uint64_t start, uint64_t length, Zone* zone)
     : start_(start), length_(length), zone_(zone) {}
 
 Status ZoneExtent::DecodeFrom(Slice* input) {
@@ -36,13 +36,13 @@ Status ZoneExtent::DecodeFrom(Slice* input) {
     return Status::Corruption("ZoneExtent", "Error: length missmatch");
 
   GetFixed64(input, &start_);
-  GetFixed32(input, &length_);
+  GetFixed64(input, &length_);
   return Status::OK();
 }
 
 void ZoneExtent::EncodeTo(std::string* output) {
   PutFixed64(output, start_);
-  PutFixed32(output, length_);
+  PutFixed64(output, length_);
 }
 
 void ZoneExtent::EncodeJson(std::ostream& json_stream) {
