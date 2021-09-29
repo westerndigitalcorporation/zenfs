@@ -281,7 +281,7 @@ void ZenFS::LogFiles() {
          zFile->IsSparse());
     for (unsigned int i = 0; i < extents.size(); i++) {
       ZoneExtent* extent = extents[i];
-      Info(logger_, "          Extent %u {start=0x%lx, zone=%u, len=%u} ", i,
+      Info(logger_, "          Extent %u {start=0x%lx, zone=%u, len=%lu} ", i,
            extent->start_,
            (uint32_t)(extent->zone_->start_ / zbd_->GetZoneSize()),
            extent->length_);

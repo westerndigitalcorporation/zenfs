@@ -42,7 +42,7 @@ class Superblock {
  public:
   const uint32_t MAGIC = 0x5a454e46; /* ZENF */
   const uint32_t ENCODED_SIZE = 512;
-  const uint32_t CURRENT_SUPERBLOCK_VERSION = 1;
+  const uint32_t CURRENT_SUPERBLOCK_VERSION = 2;
   const uint32_t DEFAULT_FLAGS = 0;
 
   Superblock() {}
