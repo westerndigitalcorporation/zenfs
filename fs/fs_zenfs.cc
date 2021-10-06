@@ -263,8 +263,9 @@ void ZenFS::LogFiles() {
     std::shared_ptr<ZoneFile> zFile = it->second;
     std::vector<ZoneExtent*> extents = zFile->GetExtents();
 
-    Info(logger_, "    %-45s sz: %lu lh: %d", it->first.c_str(),
-         zFile->GetFileSize(), zFile->GetWriteLifeTimeHint());
+    Info(logger_, "    %-45s sz: %lu lh: %d sparse: %u", it->first.c_str(),
+         zFile->GetFileSize(), zFile->GetWriteLifeTimeHint(),
+         zFile->IsSparse());
     for (unsigned int i = 0; i < extents.size(); i++) {
       ZoneExtent* extent = extents[i];
       Info(logger_, "          Extent %u {start=0x%lx, zone=%u, len=%u} ", i,
@@ -523,6 +524,8 @@ IOStatus ZenFS::NewWritableFile(const std::string& fname,
   } else {
     zoneFile->SetIOType(IOType::kUnknown);
   }
+
+  zoneFile->SetSparse(!file_opts.use_direct_writes);
 
   /* Persist the creation of the file */
   s = SyncFileMetadata(zoneFile);
