@@ -406,8 +406,6 @@ IOStatus ZoneFile::SparseAppend(char* sparse_buffer, uint32_t data_size) {
   uint32_t block_sz = GetBlockSize();
   IOStatus s;
 
-  // TODO: insert start addr here
-
   if (active_zone_ == NULL) {
     s = AllocateNewZone();
     if (!s.ok())
@@ -541,11 +539,9 @@ IOStatus ZonedWritableFile::Truncate(uint64_t size,
   return IOStatus::OK();
 }
 
-IOStatus ZonedWritableFile::Fsync(const IOOptions& /*options*/,
-                                  IODebugContext* /*dbg*/) {
-  IOStatus s;
-
-  if (buffered) {
+IOStatus ZonedWritableFile::DataSync() {
+   if (buffered) {
+    IOStatus s;
     buffer_mtx_.lock();
     /* Flushing the buffer will result in a new extent added to the list*/
     s = FlushBuffer();
@@ -554,13 +550,23 @@ IOStatus ZonedWritableFile::Fsync(const IOOptions& /*options*/,
       return s;
     }
   } else {
-    /* For direct writes, there is no buffer to flush, we just need to persist
-       the current extent */
+    /* For direct writes, there is no buffer to flush, we just need to push
+       an extent for the latest written data */
     zoneFile_->PushExtent();
   }
 
-  return zoneFile_->PersistMetadata();
+  return IOStatus::OK();
+}
 
+IOStatus ZonedWritableFile::Fsync(const IOOptions& /*options*/,
+                                  IODebugContext* /*dbg*/) {
+  IOStatus s;
+
+  s = DataSync();
+  if (!s.ok())
+    return s;
+
+  return zoneFile_->PersistMetadata();
 }
 
 IOStatus ZonedWritableFile::Sync(const IOOptions& options,

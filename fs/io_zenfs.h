@@ -172,6 +172,7 @@ class ZonedWritableFile : public FSWritableFile {
  private:
   IOStatus BufferedWrite(const Slice& data);
   IOStatus FlushBuffer();
+  IOStatus DataSync();
 
   bool buffered;
   char* sparse_buffer;
