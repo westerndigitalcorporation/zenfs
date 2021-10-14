@@ -569,9 +569,9 @@ IOStatus ZonedWritableFile::Fsync(const IOOptions& /*options*/,
   return zoneFile_->PersistMetadata();
 }
 
-IOStatus ZonedWritableFile::Sync(const IOOptions& options,
-                                 IODebugContext* dbg) {
-  return Fsync(options, dbg);
+IOStatus ZonedWritableFile::Sync(const IOOptions& /*options*/,
+                                 IODebugContext* /*dbg*/) {
+  return DataSync();
 }
 
 IOStatus ZonedWritableFile::Flush(const IOOptions& /*options*/,
@@ -580,9 +580,9 @@ IOStatus ZonedWritableFile::Flush(const IOOptions& /*options*/,
 }
 
 IOStatus ZonedWritableFile::RangeSync(uint64_t offset, uint64_t nbytes,
-                                      const IOOptions& options,
-                                      IODebugContext* dbg) {
-  if (wp < offset + nbytes) return Fsync(options, dbg);
+                                      const IOOptions& /*options*/,
+                                      IODebugContext* /*dbg*/) {
+  if (wp < offset + nbytes) return DataSync();
 
   return IOStatus::OK();
 }
