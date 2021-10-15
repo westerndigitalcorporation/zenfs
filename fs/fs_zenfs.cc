@@ -239,6 +239,9 @@ void ZenFS::LogFiles() {
 
       total_size += extent->length_;
     }
+
+    if (zFile->HasActiveExtent())
+      fprintf(stderr, "Needs recovery: %s \n", it->first.c_str());
   }
   Info(logger_, "Sum of all files: %lu MB of data \n",
        total_size / (1024 * 1024));

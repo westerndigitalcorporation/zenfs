@@ -121,6 +121,8 @@ class ZoneFile {
 
   bool IsSparse() { return is_sparse_; };
   void SetSparse(bool is_sparse) { is_sparse_ = is_sparse; };
+  uint64_t HasActiveExtent() { return extent_start_ != NO_EXTENT; };
+  uint64_t GetExtentStart() { return extent_start_; };
 };
 
 class ZonedWritableFile : public FSWritableFile {

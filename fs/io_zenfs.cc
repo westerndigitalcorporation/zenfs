@@ -206,7 +206,7 @@ Status ZoneFile::MergeUpdate(ZoneFile* update) {
     zone->used_capacity_ += extent->length_;
     extents_.push_back(new ZoneExtent(extent->start_, extent->length_, zone));
   }
-
+  extent_start_ = update->GetExtentStart();
   is_sparse_ = update->IsSparse();
   MetadataSynced();
 
@@ -250,12 +250,12 @@ void ZoneFile::CloseWR() {
     active_zone_->CloseWR();
     active_zone_ = NULL;
   }
+  extent_start_ = NO_EXTENT;
   open_for_wr_ = false;
-  metadata_writer_ = NULL;
 }
 
-void ZoneFile::OpenWR(MetadataWriter *metadata_writer) 
-{ 
+void ZoneFile::OpenWR(MetadataWriter *metadata_writer)
+{
   open_for_wr_ = true;
   metadata_writer_ = metadata_writer;
 }
@@ -263,11 +263,6 @@ void ZoneFile::OpenWR(MetadataWriter *metadata_writer)
 bool ZoneFile::IsOpenForWR() { return open_for_wr_; }
 
 IOStatus ZoneFile::PersistMetadata() {
-
-  /* If the file is open read-only, all metadata is up to date on disk */
-  if (!open_for_wr_)
-    return IOStatus::OK();
-
   assert(metadata_writer_ != NULL);
   return metadata_writer_->Persist(this);
 }
@@ -587,12 +582,13 @@ IOStatus ZonedWritableFile::RangeSync(uint64_t offset, uint64_t nbytes,
   return IOStatus::OK();
 }
 
-IOStatus ZonedWritableFile::Close(const IOOptions& options,
-                                  IODebugContext* dbg) {
-  Fsync(options, dbg);
-  zoneFile_->CloseWR();
+IOStatus ZonedWritableFile::Close(const IOOptions& /*options*/,
+                                  IODebugContext* /*dbg*/) {
+  IOStatus s = DataSync();
+  if (!s.ok()) return s;
 
-  return IOStatus::OK();
+  zoneFile_->CloseWR();
+  return zoneFile_->PersistMetadata();
 }
 
 IOStatus ZonedWritableFile::FlushBuffer() {
