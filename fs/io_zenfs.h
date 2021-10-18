@@ -128,6 +128,8 @@ class ZoneFile {
   uint64_t HasActiveExtent() { return extent_start_ != NO_EXTENT; };
   uint64_t GetExtentStart() { return extent_start_; };
 
+  IOStatus Recover();
+
  private:
   void ReleaseActiveZone();
   void SetActiveZone(Zone* zone);
@@ -136,6 +138,7 @@ class ZoneFile {
  public:
   std::shared_ptr<ZenFSMetrics> GetZBDMetrics() { return zbd_->GetMetrics(); }
   IOType GetIOType() const { return IOType::kUnknown; }
+  IOStatus RecoverSparseExtents(uint64_t start, uint64_t end, Zone* zone);
 };
 
 class ZonedWritableFile : public FSWritableFile {

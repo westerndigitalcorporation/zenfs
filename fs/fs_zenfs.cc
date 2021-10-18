@@ -254,6 +254,19 @@ ZenFS::~ZenFS() {
   delete zbd_;
 }
 
+IOStatus ZenFS::Repair() {
+  std::map<std::string, std::shared_ptr<ZoneFile>>::iterator it;
+  for (it = files_.begin(); it != files_.end(); it++) {
+    std::shared_ptr<ZoneFile> zFile = it->second;
+    if (zFile->HasActiveExtent()) {
+      IOStatus s = zFile->Recover();
+      if (!s.ok()) return s;
+    }
+  }
+
+  return IOStatus::OK();
+}
+
 void ZenFS::LogFiles() {
   std::map<std::string, std::shared_ptr<ZoneFile>>::iterator it;
   uint64_t total_size = 0;
@@ -1026,6 +1039,9 @@ Status ZenFS::Mount(bool readonly) {
       valid_logs[i].reset();
     }
   }
+
+  s = Repair();
+  if (!s.ok()) return s;
 
   if (readonly) {
     Info(logger_, "Mounting READ ONLY");
