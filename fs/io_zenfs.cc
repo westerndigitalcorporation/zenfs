@@ -217,7 +217,7 @@ ZoneFile::ZoneFile(ZonedBlockDevice* zbd, std::string filename,
                    uint64_t file_id)
     : zbd_(zbd),
       active_zone_(NULL),
-      extent_start_(0),
+      extent_start_(NO_EXTENT),
       extent_filepos_(0),
       lifetime_(Env::WLTH_NOT_SET),
       io_type_(IOType::kUnknown),
@@ -512,6 +512,100 @@ IOStatus ZoneFile::Append(void* data, int data_size) {
     fileSize += wr_size;
     left -= wr_size;
     offset += wr_size;
+  }
+
+  return IOStatus::OK();
+}
+
+IOStatus ZoneFile::RecoverSparseExtents(uint64_t start, uint64_t end,
+                                        Zone* zone) {
+  /* Sparse writes, we need to recover each individual segment */
+  IOStatus s;
+  uint32_t block_sz = GetBlockSize();
+  int f = zbd_->GetReadFD();
+  uint64_t next_extent_start = start;
+  char* buffer;
+  int recovered_segments = 0;
+  int ret;
+
+  ret = posix_memalign((void**)&buffer, sysconf(_SC_PAGESIZE), block_sz);
+  if (ret) {
+    return IOStatus::IOError("Out of memory while recovering");
+  }
+
+  while (next_extent_start < end) {
+    uint64_t extent_length;
+
+    ret = pread(f, (void*)buffer, block_sz, next_extent_start);
+    if (ret != (int)block_sz) {
+      s = IOStatus::IOError("Unexpected read error while recovering");
+      break;
+    }
+
+    extent_length = DecodeFixed64(buffer);
+    if (extent_length == 0) {
+      s = IOStatus::IOError("Unexexpeted extent length while recovering");
+      break;
+    }
+    recovered_segments++;
+
+    zone->used_capacity_ += extent_length;
+    extents_.push_back(new ZoneExtent(next_extent_start + SPARSE_HEADER_SIZE,
+                                      extent_length, zone));
+
+    uint64_t extent_blocks = 1 + extent_length / block_sz;
+    next_extent_start += extent_blocks * block_sz;
+  }
+
+  free(buffer);
+  return s;
+}
+
+IOStatus ZoneFile::Recover() {
+  /* If there is no active extent, the file was either closed gracefully
+     or there were no writes prior to a crash. All good.*/
+  if (!HasActiveExtent()) return IOStatus::OK();
+
+  /* Figure out which zone we were writing to */
+  Zone* zone = zbd_->GetIOZone(extent_start_);
+
+  if (zone == nullptr) {
+    return IOStatus::IOError(
+        "Could not find zone for extent start while recovering");
+  }
+
+  if (zone->wp_ < extent_start_) {
+    return IOStatus::IOError("Zone wp is smaller than active extent start");
+  }
+
+  /* How much data do we need to recover? */
+  uint64_t to_recover = zone->wp_ - extent_start_;
+
+  /* Do we actually have any data to recover? */
+  if (to_recover == 0) {
+    /* Mark up the file as having no missing extents */
+    extent_start_ = NO_EXTENT;
+    return IOStatus::OK();
+  }
+
+  /* Is the data sparse or was it writted direct? */
+  if (is_sparse_) {
+    IOStatus s = RecoverSparseExtents(extent_start_, zone->wp_, zone);
+    if (!s.ok()) return s;
+  } else {
+    /* For non-sparse files, the data is contigous and we can recover directly
+       any missing data using the WP */
+    zone->used_capacity_ += to_recover;
+    extents_.push_back(new ZoneExtent(extent_start_, to_recover, zone));
+  }
+
+  /* Mark up the file as having no missing extents */
+  extent_start_ = NO_EXTENT;
+
+  /* Recalculate file size */
+  fileSize = 0;
+  for (uint32_t i = 0; i < extents_.size(); i++) {
+    fileSize += extents_[i]->length_;
   }
 
   return IOStatus::OK();
