@@ -123,6 +123,13 @@ class ZoneFile {
   void SetSparse(bool is_sparse) { is_sparse_ = is_sparse; };
   uint64_t HasActiveExtent() { return extent_start_ != NO_EXTENT; };
   uint64_t GetExtentStart() { return extent_start_; };
+
+  IOStatus Recover();
+
+ private:
+
+  IOStatus RecoverSparseExtents(uint64_t start, uint64_t end, Zone *zone);
+
 };
 
 class ZonedWritableFile : public FSWritableFile {
