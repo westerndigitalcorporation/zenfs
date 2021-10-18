@@ -221,6 +221,23 @@ ZenFS::~ZenFS() {
   delete zbd_;
 }
 
+void ZenFS::Repair() {
+  std::map<std::string, std::shared_ptr<ZoneFile>>::iterator it;
+  for (it = files_.begin(); it != files_.end(); it++) {
+    const char *filename = it->first.c_str();
+    std::shared_ptr<ZoneFile> zFile = it->second;
+    if (zFile->HasActiveExtent()) {
+      fprintf(stderr, "Recovering data for: %s \n", filename);
+      IOStatus s = zFile->Recover();
+      if (!s.ok()) {
+        fprintf(stderr, "   Recovery failed\n");
+      } else {
+        fprintf(stderr, "   Recovery ok\n");
+      }
+    }
+  }
+}
+
 void ZenFS::LogFiles() {
   std::map<std::string, std::shared_ptr<ZoneFile>>::iterator it;
   uint64_t total_size = 0;
@@ -241,9 +258,6 @@ void ZenFS::LogFiles() {
 
       total_size += extent->length_;
     }
-
-    if (zFile->HasActiveExtent())
-      fprintf(stderr, "Needs recovery: %s \n", it->first.c_str());
   }
   Info(logger_, "Sum of all files: %lu MB of data \n",
        total_size / (1024 * 1024));
@@ -984,6 +998,9 @@ Status ZenFS::Mount(bool readonly) {
       valid_logs[i].reset();
     }
   }
+
+  // TODO: handle unsuccessful repair
+  Repair();
 
   if (readonly) {
     Info(logger_, "Mounting READ ONLY");

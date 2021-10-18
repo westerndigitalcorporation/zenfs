@@ -174,6 +174,7 @@ class ZenFS : public FileSystemWrapper {
   std::shared_ptr<ZoneFile> GetFileInternal(std::string fname);
   std::shared_ptr<ZoneFile> GetFile(std::string fname);
   IOStatus DeleteFile(std::string fname);
+  void Repair();
 
  public:
   explicit ZenFS(ZonedBlockDevice* zbd, std::shared_ptr<FileSystem> aux_fs,
