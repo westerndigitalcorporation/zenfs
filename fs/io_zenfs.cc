@@ -490,6 +490,7 @@ IOStatus ZoneFile::RecoverSparseExtents(uint64_t start, uint64_t end, Zone *zone
   int f = zbd_->GetReadFD();
   uint64_t next_extent_start = start;
   char* buffer;
+  int recovered_segments = 0;
   int ret;
 
   ret = posix_memalign((void**)&buffer, sysconf(_SC_PAGESIZE), block_sz);
@@ -509,12 +510,13 @@ IOStatus ZoneFile::RecoverSparseExtents(uint64_t start, uint64_t end, Zone *zone
      }
 
      extent_length = DecodeFixed64(buffer);
-     fprintf(stderr, "    Found extent of length: %lu \n", extent_length);
+     //fprintf(stderr, "    Found extent of length: %lu \n", extent_length);
      if (extent_length == 0) {
        fprintf(stderr,"    Unexpected extent length = 0\n");
        s = IOStatus::IOError("");
        break;
      }
+     recovered_segments++;
 
      zone->used_capacity_ += extent_length;
      extents_.push_back(new ZoneExtent(next_extent_start + SPARSE_HEADER_SIZE,
@@ -523,6 +525,8 @@ IOStatus ZoneFile::RecoverSparseExtents(uint64_t start, uint64_t end, Zone *zone
      uint64_t extent_blocks = 1 + extent_length / block_sz;
      next_extent_start += extent_blocks * block_sz;
   }
+
+  fprintf(stderr, "    Recovered %d segments\n", recovered_segments);
 
   free(buffer);
   return s;
