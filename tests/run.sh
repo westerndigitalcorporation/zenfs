@@ -1,9 +1,24 @@
 #!/bin/bash
 set -e
 
+# How to use the shell for convenient test
+# Before: 
+# 1. run with the 'root'
+# 2. the device should have run : 
+#    ../util/zenfs mkfs --zbd=<zoned block device> --aux_path=<path to store LOG and LOCK files>
+#
+# Run:
+#   sh run.sh <log-dir-name> <TEST-DIR> <DEVICE-NAME>
+#   eg: sh run.sh long-result long_performance nvme2n1
+
 NAME=$1
 TEST_DIR=$2
+DEV=$3 # Device name ,like: nvme2n1
 TESTS=$(ls $TEST_DIR/*_*.sh)
+
+# Produce the better option of the rocksdb on zenfs.
+# And init the variable '$FS_PARAMS' and '$DB_BENCH_EXTRA_PARAMS'
+source ./get_good_db_bench_params_for_zenfs.sh $DEV
 
 OK_TESTS=0
 FAILED_TESTS=0
