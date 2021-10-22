@@ -72,6 +72,14 @@ UUIDs can be listed using `./plugin/zenfs/util/zenfs ls-uuid`
 
 ```
 
+## Performance testing
+
+If you want to use db_bench for testing zenfs performance, there is a a convenience script
+that runs the 'long' and 'quick' performance test sets with a good set of parameters
+for the drive.
+
+`cd tests; ./zenfs_base_performance.sh <zoned block device name>`
+
 # ZenFS Internals
 
 ## Architecture overview
