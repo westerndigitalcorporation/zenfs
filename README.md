@@ -52,7 +52,7 @@ echo deadline > /sys/class/block/<zoned block device>/queue/scheduler
 ```
 
 If you want to run db_bench below, there is a shell for you to run db_bench 
-with a 'long' and 'qucik' performance without execute the left command.
+with a 'long' and 'qucik' performance without execute left commands.
 `cd tests; ./zenfs_base_performance.sh <zoned block device name>`
 
 ## Creating a ZenFS file system
