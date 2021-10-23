@@ -51,6 +51,10 @@ This must be done every time the zoned name space is enumerated (e.g at boot).
 echo deadline > /sys/class/block/<zoned block device>/queue/scheduler
 ```
 
+If you want to run db_bench below, there is a shell for you to run db_bench 
+with a 'long' and 'qucik' performance without execute the left command.
+`cd tests; ./zenfs_base_performance.sh <zoned block device name>`
+
 ## Creating a ZenFS file system
 
 Before ZenFS can be used in RocksDB, the file system metadata and superblock must be set up.
