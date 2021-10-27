@@ -80,6 +80,22 @@ for the drive.
 
 `cd tests; ./zenfs_base_performance.sh <zoned block device name>`
 
+
+## Crashtesting
+To run the crashtesting scripts, Python3 is required.
+Crashtesting is done through the modified db_crashtest.py
+(original [db_crashtest.py](https://github.com/facebook/rocksdb/blob/main/tools/db_crashtest.py)).
+It kills the DB at a random point in time (blackbox) or at predefined places
+in the RocksDB code (whitebox) and checks for recovery.
+For further reading visit the RocksDB [wiki](https://github.com/facebook/rocksdb/wiki/Stress-test).
+However the goal for ZenFS crashtesting is to cover a specified set of
+parameters rather than randomized continuous testing.
+
+The convenience script can be used to run all crashtest sets defined in `tests/crashtest`.
+```
+cd tests; ./zenfs_base_crashtest.sh <zoned block device name>
+```
+
 # ZenFS Internals
 
 ## Architecture overview
