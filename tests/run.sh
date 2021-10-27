@@ -10,6 +10,7 @@ FAILED_TESTS=0
 
 export TOOLS_DIR="../../../"
 export ZENFS_DIR="../util/"
+export STRESS_CMD="../../../db_stress"
 
 RESULT_PATH="results/$NAME"
 RESULT_DIR="results/$NAME/$TEST_DIR"
@@ -23,9 +24,13 @@ do
   echo "$(tput setaf 3)Running $TEST $(tput sgr 0)"
   
   export RESULT_DIR="$RESULT_DIR"
-  export TEST_OUT="$RESULT_PATH/${TEST/sh/out}"
-  TEST_RES=$($TESTCASE)
+  export TEST_OUT="$RESULT_PATH/${TEST/.sh/.out}"
+
+  set +e
+  $TESTCASE
   RES=$?
+  set -e
+
   echo ""
   if [ $RES -eq 0 ]; then
     echo "$(tput setaf 2)OK$(tput sgr 0)"
