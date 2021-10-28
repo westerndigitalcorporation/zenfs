@@ -43,10 +43,10 @@ namespace ROCKSDB_NAMESPACE {
 
 Zone::Zone(ZonedBlockDevice *zbd, struct zbd_zone *z)
     : zbd_(zbd),
+      busy_(false),
       start_(zbd_zone_start(z)),
       max_capacity_(zbd_zone_capacity(z)),
-      wp_(zbd_zone_wp(z)),
-      open_for_write_(false) {
+      wp_(zbd_zone_wp(z)) {
   lifetime_ = Env::WLTH_NOT_SET;
   used_capacity_ = 0;
   capacity_ = 0;
@@ -54,23 +54,22 @@ Zone::Zone(ZonedBlockDevice *zbd, struct zbd_zone *z)
     capacity_ = zbd_zone_capacity(z) - (zbd_zone_wp(z) - zbd_zone_start(z));
 }
 
-bool Zone::IsUsed() { return (used_capacity_ > 0) || open_for_write_; }
+bool Zone::IsUsed() { return (used_capacity_ > 0); }
 uint64_t Zone::GetCapacityLeft() { return capacity_; }
 bool Zone::IsFull() { return (capacity_ == 0); }
 bool Zone::IsEmpty() { return (wp_ == start_); }
 uint64_t Zone::GetZoneNr() { return start_ / zbd_->GetZoneSize(); }
 
-void Zone::CloseWR() {
-  assert(open_for_write_);
-  open_for_write_ = false;
-
+IOStatus Zone::CloseWR() {
   const std::lock_guard<std::mutex> lock(zbd_->zone_resources_mtx_);
 
-  if (Close().ok()) {
-    zbd_->NotifyIOZoneClosed();
-  }
+  assert(IsBusy());
+
+  IOStatus status = Close();
 
   if (capacity_ == 0) zbd_->NotifyIOZoneFull();
+
+  return status;
 }
 
 void Zone::EncodeJson(std::ostream &json_stream) {
@@ -91,6 +90,7 @@ IOStatus Zone::Reset() {
   int ret;
 
   assert(!IsUsed());
+  assert(IsBusy());
 
   ret = zbd_reset_zones(zbd_->GetWriteFD(), start_, zone_sz);
   if (ret) return IOStatus::IOError("Zone reset failed\n");
@@ -116,7 +116,7 @@ IOStatus Zone::Finish() {
   int fd = zbd_->GetWriteFD();
   int ret;
 
-  assert(!open_for_write_);
+  assert(IsBusy());
 
   ret = zbd_finish_zones(fd, start_, zone_sz);
   if (ret) return IOStatus::IOError("Zone finish failed\n");
@@ -132,7 +132,7 @@ IOStatus Zone::Close() {
   int fd = zbd_->GetWriteFD();
   int ret;
 
-  assert(!open_for_write_);
+  assert(IsBusy());
 
   if (!(IsEmpty() || IsFull())) {
     ret = zbd_close_zones(fd, start_, zone_sz);
@@ -305,11 +305,15 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   open_io_zones_ = 0;
 
   for (; i < reported_zones; i++) {
+    bool ok = false;
+
     struct zbd_zone *z = &zone_rep[i];
     /* Only use sequential write required zones */
     if (zbd_zone_type(z) == ZBD_ZONE_TYPE_SWR) {
       if (!zbd_zone_offline(z)) {
         Zone *newZone = new Zone(this, z);
+        ok = newZone->Acquire();
+        assert(ok);
         io_zones.push_back(newZone);
         if (zbd_zone_imp_open(z) || zbd_zone_exp_open(z) ||
             zbd_zone_closed(z)) {
@@ -320,6 +324,9 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
             }
           }
         }
+        ok = newZone->Release();
+        assert(ok);
+        (void)(ok);
       }
     }
   }
@@ -443,14 +450,17 @@ unsigned int GetLifeTimeDiff(Env::WriteLifeTimeHint zone_lifetime,
 Zone *ZonedBlockDevice::AllocateMetaZone() {
   for (const auto z : meta_zones) {
     /* If the zone is not used, reset and use it */
-    if (!z->IsUsed()) {
-      if (!z->IsEmpty()) {
-        if (!z->Reset().ok()) {
+    if (z->Acquire()) {
+      if (!z->IsUsed()) {
+        if (!z->IsEmpty() && !z->Reset().ok()) {
           Warn(logger_, "Failed resetting zone!");
+          bool ok = z->Release();
+          assert(ok);
+          (void)ok;
           continue;
         }
+        return z;
       }
-      return z;
     }
   }
   return nullptr;
@@ -460,9 +470,14 @@ void ZonedBlockDevice::ResetUnusedIOZones() {
   const std::lock_guard<std::mutex> lock(zone_resources_mtx_);
   /* Reset any unused zones */
   for (const auto z : io_zones) {
-    if (!z->IsUsed() && !z->IsEmpty()) {
-      if (!z->IsFull()) active_io_zones_--;
-      if (!z->Reset().ok()) Warn(logger_, "Failed reseting zone");
+    if (z->Acquire()) {
+      if (!z->IsUsed() && !z->IsEmpty()) {
+        if (!z->IsFull()) active_io_zones_--;
+        if (!z->Reset().ok()) Warn(logger_, "Failed reseting zone");
+      }
+      bool ok = z->Release();
+      assert(ok);
+      (void)ok;
     }
   }
 }
@@ -473,6 +488,8 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
   unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
   int new_zone = 0;
   Status s;
+  bool ok = false;
+  (void)ok; /* avoid compile warning in non-debug builds when assertions are disabled */
 
   io_zones_mtx.lock();
 
@@ -487,8 +504,15 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
 
   /* Reset any unused zones and finish used zones under capacity treshold*/
   for (const auto z : io_zones) {
-    if (z->open_for_write_ || z->IsEmpty() || (z->IsFull() && z->IsUsed()))
+    if (!z->Acquire()) {
       continue;
+    }
+
+    if (z->IsEmpty() || (z->IsFull() && z->IsUsed())) {
+      ok = z->Release();
+      assert(ok);
+      continue;
+    }
 
     if (!z->IsUsed()) {
       if (!z->IsFull()) active_io_zones_--;
@@ -496,6 +520,9 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
       if (!s.ok()) {
         Debug(logger_, "Failed resetting zone !");
       }
+
+      ok = z->Release();
+      assert(ok);
       continue;
     }
 
@@ -513,21 +540,46 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
       if (finish_victim == nullptr) {
         finish_victim = z;
       } else if (finish_victim->capacity_ > z->capacity_) {
+        ok = finish_victim->Release();
+        assert(ok);
         finish_victim = z;
+      } else {
+        ok = z->Release();
+        assert(ok);
+      }
+    } else {
+      ok = z->Release();
+      assert(ok);
+    }
+  }
+
+  // Holding finish_victim if != nullptr
+
+  /* Try to fill an already open zone(with the best life time diff) */
+  for (const auto z : io_zones) {
+    if (z->Acquire()) {
+      if ((z->used_capacity_ > 0) && !z->IsFull()) {
+        unsigned int diff = GetLifeTimeDiff(z->lifetime_, file_lifetime);
+        if (diff <= best_diff) {
+          if (allocated_zone != nullptr) {
+            ok = allocated_zone->Release();
+            assert(ok);
+          }
+          allocated_zone = z;
+          best_diff = diff;
+        } else {
+          ok = z->Release();
+          assert(ok);
+        }
+      } else {
+        ok = z->Release();
+        assert(ok);
       }
     }
   }
 
-  /* Try to fill an already open zone(with the best life time diff) */
-  for (const auto z : io_zones) {
-    if ((!z->open_for_write_) && (z->used_capacity_ > 0) && !z->IsFull()) {
-      unsigned int diff = GetLifeTimeDiff(z->lifetime_, file_lifetime);
-      if (diff <= best_diff) {
-        allocated_zone = z;
-        best_diff = diff;
-      }
-    }
-  }
+  // Holding finish_victim if != nullptr
+  // Holding allocated_zone if != nullptr
 
   /* If we did not find a good match, allocate an empty one */
   if (best_diff >= LIFETIME_DIFF_NOT_GOOD) {
@@ -544,20 +596,35 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
 
     if (active_io_zones_.load() < max_nr_active_io_zones_) {
       for (const auto z : io_zones) {
-        if ((!z->open_for_write_) && z->IsEmpty()) {
-          z->lifetime_ = file_lifetime;
-          allocated_zone = z;
-          active_io_zones_++;
-          new_zone = 1;
-          break;
+        if (z->Acquire()) {
+          if (z->IsEmpty()) {
+            z->lifetime_ = file_lifetime;
+            if (allocated_zone != nullptr) {
+              ok = allocated_zone->Release();
+              assert(ok);
+            }
+            allocated_zone = z;
+            active_io_zones_++;
+            new_zone = 1;
+            break;
+          } else {
+            ok = z->Release();
+            assert(ok);
+          }
         }
       }
     }
   }
 
+  if (finish_victim != nullptr) {
+    ok = finish_victim->Release();
+    assert(ok);
+    finish_victim = nullptr;
+  }
+
   if (allocated_zone) {
-    assert(!allocated_zone->open_for_write_);
-    allocated_zone->open_for_write_ = true;
+    ok = allocated_zone->IsBusy();
+    assert(ok);
     open_io_zones_++;
     Debug(logger_,
           "Allocating zone(new=%d) start: 0x%lx wp: 0x%lx lt: %d file lt: %d\n",

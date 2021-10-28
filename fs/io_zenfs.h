@@ -96,6 +96,10 @@ class ZoneFile {
 
   uint64_t GetID() { return file_id_; }
   size_t GetUniqueId(char* id, size_t max_size);
+
+ private:
+  void ReleaseActiveZone();
+  void SetActiveZone(Zone* zone);
 };
 
 class ZonedWritableFile : public FSWritableFile {

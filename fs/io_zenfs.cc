@@ -225,8 +225,11 @@ ZoneFile::~ZoneFile() {
 
 void ZoneFile::CloseWR() {
   if (active_zone_) {
-    active_zone_->CloseWR();
-    active_zone_ = NULL;
+    IOStatus status = active_zone_->CloseWR();
+    ReleaseActiveZone();
+    if (status.ok()) {
+      zbd_->NotifyIOZoneClosed();
+    }
   }
   open_for_wr_ = false;
 }
@@ -355,11 +358,12 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
   uint32_t wr_size, offset = 0;
   IOStatus s;
 
-  if (active_zone_ == NULL) {
-    active_zone_ = zbd_->AllocateZone(lifetime_);
-    if (!active_zone_) {
+  if (!active_zone_) {
+    Zone* zone = zbd_->AllocateZone(lifetime_);
+    if (!zone) {
       return IOStatus::NoSpace("Zone allocation failure\n");
     }
+    SetActiveZone(zone);
     extent_start_ = active_zone_->wp_;
     extent_filepos_ = fileSize;
   }
@@ -368,11 +372,18 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
     if (active_zone_->capacity_ == 0) {
       PushExtent();
 
-      active_zone_->CloseWR();
-      active_zone_ = zbd_->AllocateZone(lifetime_);
-      if (!active_zone_) {
+      IOStatus status = active_zone_->CloseWR();
+      ReleaseActiveZone();
+      if (status.ok()) {
+        zbd_->NotifyIOZoneClosed();
+      }
+
+      Zone* zone = zbd_->AllocateZone(lifetime_);
+      if (!zone) {
         return IOStatus::NoSpace("Zone allocation failure\n");
       }
+      SetActiveZone(zone);
+
       extent_start_ = active_zone_->wp_;
       extent_filepos_ = fileSize;
     }
@@ -395,6 +406,20 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
 IOStatus ZoneFile::SetWriteLifeTimeHint(Env::WriteLifeTimeHint lifetime) {
   lifetime_ = lifetime;
   return IOStatus::OK();
+}
+
+void ZoneFile::ReleaseActiveZone() {
+  assert(active_zone_ != nullptr);
+  bool ok = active_zone_->Release();
+  assert(ok);
+  (void)ok;
+  active_zone_ = nullptr;
+}
+
+void ZoneFile::SetActiveZone(Zone* zone) {
+  assert(active_zone_ == nullptr);
+  assert(zone->IsBusy());
+  active_zone_ = zone;
 }
 
 ZonedWritableFile::ZonedWritableFile(ZonedBlockDevice* zbd, bool _buffered,

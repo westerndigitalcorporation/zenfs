@@ -277,8 +277,8 @@ IOStatus ZenFS::WriteEndRecord(ZenMetaLog* meta_log) {
 
 /* Assumes the files_mtx_ is held */
 IOStatus ZenFS::RollMetaZoneLocked() {
-  ZenMetaLog* new_meta_log;
-  Zone *new_meta_zone, *old_meta_zone;
+  std::unique_ptr<ZenMetaLog> new_meta_log, old_meta_log;
+  Zone* new_meta_zone;
   IOStatus s;
 
   new_meta_zone = zbd_->AllocateMetaZone();
@@ -289,16 +289,16 @@ IOStatus ZenFS::RollMetaZoneLocked() {
   }
 
   Info(logger_, "Rolling to metazone %d\n", (int)new_meta_zone->GetZoneNr());
-  new_meta_log = new ZenMetaLog(zbd_, new_meta_zone);
+  new_meta_log.reset(new ZenMetaLog(zbd_, new_meta_zone));
 
-  old_meta_zone = meta_log_->GetZone();
-  old_meta_zone->open_for_write_ = false;
+  old_meta_log.swap(meta_log_);
+  meta_log_.swap(new_meta_log);
 
   /* Write an end record and finish the meta data zone if there is space left */
-  if (old_meta_zone->GetCapacityLeft()) WriteEndRecord(meta_log_.get());
-  if (old_meta_zone->GetCapacityLeft()) old_meta_zone->Finish();
-
-  meta_log_.reset(new_meta_log);
+  if (old_meta_log->GetZone()->GetCapacityLeft())
+    WriteEndRecord(old_meta_log.get());
+  if (old_meta_log->GetZone()->GetCapacityLeft())
+    old_meta_log->GetZone()->Finish();
 
   std::string super_string;
   superblock_->EncodeTo(&super_string);
@@ -313,7 +313,7 @@ IOStatus ZenFS::RollMetaZoneLocked() {
   s = WriteSnapshotLocked(meta_log_.get());
 
   /* We've rolled successfully, we can reset the old zone now */
-  if (s.ok()) old_meta_zone->Reset();
+  if (s.ok()) old_meta_log->GetZone()->Reset();
 
   return s;
 }
@@ -876,6 +876,10 @@ Status ZenFS::Mount(bool readonly) {
     std::string scratch;
     Slice super_record;
 
+    bool ok = z->Acquire();
+    assert(ok);
+    (void)ok;
+
     log.reset(new ZenMetaLog(zbd_, z));
 
     if (!log->ReadRecord(&super_record, &scratch).ok()) continue;
@@ -1005,8 +1009,17 @@ Status ZenFS::MkFS(std::string aux_fs_path, uint32_t finish_threshold) {
   zbd_->ResetUnusedIOZones();
 
   for (const auto mz : metazones) {
+    bool ok = mz->Acquire();
+    assert(ok);
+    (void)ok;
+
     if (mz->Reset().ok()) {
-      if (!meta_zone) meta_zone = mz;
+      if (!meta_zone) {
+        meta_zone = mz;
+      } else {
+        ok = mz->Release();
+        assert(ok);
+      }
     } else {
       Warn(logger_, "Failed to reset meta zone\n");
     }

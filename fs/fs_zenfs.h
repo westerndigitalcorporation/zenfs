@@ -80,14 +80,18 @@ class ZenMetaLog {
 
  public:
   ZenMetaLog(ZonedBlockDevice* zbd, Zone* zone) {
+    assert(zone->IsBusy());
     zbd_ = zbd;
     zone_ = zone;
-    zone_->open_for_write_ = true;
     bs_ = zbd_->GetBlockSize();
     read_pos_ = zone->start_;
   }
 
-  virtual ~ZenMetaLog() { zone_->open_for_write_ = false; }
+  virtual ~ZenMetaLog() {
+    bool ok = zone_->Release();
+    assert(ok);
+    (void)ok;
+  }
 
   IOStatus AddRecord(const Slice& slice);
   IOStatus ReadRecord(Slice* record, std::string* scratch);
