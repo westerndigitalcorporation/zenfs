@@ -54,6 +54,8 @@ class Zone {
   bool IsEmpty();
   uint64_t GetZoneNr();
   uint64_t GetCapacityLeft();
+  bool SynchronousIsOpenForWrite();
+  void SynchronousSetOpenForWrite(bool value);
 
   void EncodeJson(std::ostream &json_stream);
 

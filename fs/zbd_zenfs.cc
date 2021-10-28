@@ -60,11 +60,21 @@ bool Zone::IsFull() { return (capacity_ == 0); }
 bool Zone::IsEmpty() { return (wp_ == start_); }
 uint64_t Zone::GetZoneNr() { return start_ / zbd_->GetZoneSize(); }
 
+bool Zone::SynchronousIsOpenForWrite() {
+  const std::lock_guard<std::mutex> lock(this->zbd_->zone_resources_mtx_);
+  return this->open_for_write_;
+}
+
+void Zone::SynchronousSetOpenForWrite(bool value) {
+  const std::lock_guard<std::mutex> lock(this->zbd_->zone_resources_mtx_);
+  this->open_for_write_ = value;
+}
+
 void Zone::CloseWR() {
+  const std::lock_guard<std::mutex> lock(zbd_->zone_resources_mtx_);
+
   assert(open_for_write_);
   open_for_write_ = false;
-
-  const std::lock_guard<std::mutex> lock(zbd_->zone_resources_mtx_);
 
   if (Close().ok()) {
     zbd_->NotifyIOZoneClosed();
@@ -487,7 +497,8 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
 
   /* Reset any unused zones and finish used zones under capacity treshold*/
   for (const auto z : io_zones) {
-    if (z->open_for_write_ || z->IsEmpty() || (z->IsFull() && z->IsUsed()))
+    if (z->SynchronousIsOpenForWrite() || z->IsEmpty() ||
+        (z->IsFull() && z->IsUsed()))
       continue;
 
     if (!z->IsUsed()) {
@@ -520,7 +531,8 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
 
   /* Try to fill an already open zone(with the best life time diff) */
   for (const auto z : io_zones) {
-    if ((!z->open_for_write_) && (z->used_capacity_ > 0) && !z->IsFull()) {
+    if ((!z->SynchronousIsOpenForWrite()) && (z->used_capacity_ > 0) &&
+        !z->IsFull()) {
       unsigned int diff = GetLifeTimeDiff(z->lifetime_, file_lifetime);
       if (diff <= best_diff) {
         allocated_zone = z;
@@ -544,7 +556,7 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
 
     if (active_io_zones_.load() < max_nr_active_io_zones_) {
       for (const auto z : io_zones) {
-        if ((!z->open_for_write_) && z->IsEmpty()) {
+        if ((!z->SynchronousIsOpenForWrite()) && z->IsEmpty()) {
           z->lifetime_ = file_lifetime;
           allocated_zone = z;
           active_io_zones_++;
@@ -556,8 +568,8 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
   }
 
   if (allocated_zone) {
-    assert(!allocated_zone->open_for_write_);
-    allocated_zone->open_for_write_ = true;
+    assert(!allocated_zone->SynchronousIsOpenForWrite());
+    allocated_zone->SynchronousSetOpenForWrite(true);
     open_io_zones_++;
     Debug(logger_,
           "Allocating zone(new=%d) start: 0x%lx wp: 0x%lx lt: %d file lt: %d\n",
