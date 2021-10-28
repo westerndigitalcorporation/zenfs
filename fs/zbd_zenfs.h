@@ -32,6 +32,7 @@ class ZonedBlockDevice;
 
 class Zone {
   ZonedBlockDevice *zbd_;
+  std::atomic_bool busy_;
 
  public:
   explicit Zone(ZonedBlockDevice *zbd, struct zbd_zone *z);
@@ -54,10 +55,21 @@ class Zone {
   bool IsEmpty();
   uint64_t GetZoneNr();
   uint64_t GetCapacityLeft();
+  bool IsBusy() { return this->busy_.load(std::memory_order_relaxed); }
+  bool SetBusy() {
+    bool expected = false;
+    return this->busy_.compare_exchange_strong(expected, true,
+                                               std::memory_order_acq_rel);
+  }
+  bool UnsetBusy() {
+    bool expected = true;
+    return this->busy_.compare_exchange_strong(expected, false,
+                                               std::memory_order_acq_rel);
+  }
 
   void EncodeJson(std::ostream &json_stream);
 
-  void CloseWR(); /* Done writing */
+  IOStatus CloseWR(); /* Done writing */
 };
 
 class ZonedBlockDevice {
