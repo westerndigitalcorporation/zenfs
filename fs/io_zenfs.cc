@@ -198,6 +198,7 @@ ZoneFile::ZoneFile(ZonedBlockDevice* zbd, std::string filename,
       extent_start_(0),
       extent_filepos_(0),
       lifetime_(Env::WLTH_NOT_SET),
+      io_type_(IOType::kUnknown),
       fileSize(0),
       filename_(filename),
       file_id_(file_id),
@@ -211,6 +212,7 @@ time_t ZoneFile::GetFileModificationTime() { return m_time_; }
 uint64_t ZoneFile::GetFileSize() { return fileSize; }
 void ZoneFile::SetFileSize(uint64_t sz) { fileSize = sz; }
 void ZoneFile::SetFileModificationTime(time_t mt) { m_time_ = mt; }
+void ZoneFile::SetIOType(IOType io_type) { io_type_ = io_type; }
 
 ZoneFile::~ZoneFile() {
   for (auto e = std::begin(extents_); e != std::end(extents_); ++e) {
@@ -382,7 +384,7 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
 
   if (!active_zone_) {
     Zone* zone = nullptr;
-    s = zbd_->AllocateIOZone(lifetime_, &zone);
+    s = zbd_->AllocateIOZone(lifetime_, io_type_, &zone);
     if (!s.ok()) return s;
 
     if (!zone) {
@@ -405,7 +407,7 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
       }
 
       Zone* zone = nullptr;
-      s = zbd_->AllocateIOZone(lifetime_, &zone);
+      s = zbd_->AllocateIOZone(lifetime_, io_type_, &zone);
       if (!s.ok()) return s;
 
       if (!zone) {

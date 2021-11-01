@@ -48,6 +48,7 @@ class ZoneFile {
   uint64_t extent_filepos_;
 
   Env::WriteLifeTimeHint lifetime_;
+  IOType io_type_; /* Only used when writing */
   uint64_t fileSize;
   std::string filename_;
   uint64_t file_id_;
@@ -68,6 +69,7 @@ class ZoneFile {
 
   IOStatus Append(void* data, int data_size, int valid_size);
   IOStatus SetWriteLifeTimeHint(Env::WriteLifeTimeHint lifetime);
+  void SetIOType(IOType io_type);
   std::string GetFilename();
   void Rename(std::string name);
   time_t GetFileModificationTime();
