@@ -697,7 +697,7 @@ IOStatus ZonedBlockDevice::AllocateEmptyZone(Zone **zone_out) {
 }
 
 IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
-                                          Zone **out_zone) {
+                                          IOType io_type, Zone **out_zone) {
   Zone *allocated_zone = nullptr;
   unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
   int new_zone = 0;
@@ -716,10 +716,11 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
     return s;
   }
 
-  /* TODO: this should not be done for wal files */
-  s = ApplyFinishThreshold();
-  if (!s.ok()) {
-    return s;
+  if (io_type != IOType::kWAL) {
+    s = ApplyFinishThreshold();
+    if (!s.ok()) {
+      return s;
+    }
   }
 
   WaitForOpenIOZoneToken();
@@ -788,7 +789,10 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
     PutOpenIOZoneToken();
   }
 
-  LogZoneStats();
+  if (io_type != IOType::kWAL) {
+    LogZoneStats();
+  }
+
   *out_zone = allocated_zone;
 
   metrics_->ReportGeneral(ZENFS_LABEL(OPEN_ZONES, COUNT), open_io_zones_);

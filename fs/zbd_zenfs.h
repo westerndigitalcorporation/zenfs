@@ -25,6 +25,7 @@
 
 #include "metrics.h"
 #include "rocksdb/env.h"
+#include "rocksdb/file_system.h"
 #include "rocksdb/io_status.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -118,7 +119,7 @@ class ZonedBlockDevice {
 
   Zone *GetIOZone(uint64_t offset);
 
-  IOStatus AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
+  IOStatus AllocateIOZone(Env::WriteLifeTimeHint file_lifetime, IOType io_type,
                           Zone **out_zone);
   IOStatus AllocateMetaZone(Zone **out_meta_zone);
 
