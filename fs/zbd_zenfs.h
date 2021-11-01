@@ -129,6 +129,7 @@ class ZonedBlockDevice {
 
  private:
   std::string ErrorToString(int err);
+  IOStatus TestZoneClose(struct zbd_zone *zone);
 };
 
 }  // namespace ROCKSDB_NAMESPACE

@@ -4,9 +4,8 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
+#include <cerrno>
 #if !defined(ROCKSDB_LITE) && !defined(OS_WIN)
-
-#include "zbd_zenfs.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -25,6 +24,7 @@
 #include <vector>
 
 #include "rocksdb/env.h"
+#include "zbd_zenfs.h"
 
 #define KB (1024)
 #define MB (1024 * KB)
@@ -285,6 +285,10 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   ret = zbd_list_zones(read_f_, 0, addr_space_sz, ZBD_RO_ALL, &zone_rep,
                        &reported_zones);
 
+  if (reported_zones == 0) {
+    return IOStatus::NoSpace("No zones on device");
+  }
+
   if (ret || reported_zones != nr_zones_) {
     Error(logger_, "Failed to list zones, err: %d", ret);
     return IOStatus::IOError("Failed to list zones");
@@ -303,6 +307,11 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
 
   active_io_zones_ = 0;
   open_io_zones_ = 0;
+
+  ios = this->TestZoneClose(&zone_rep[0]);
+  if (!ios.ok()) {
+    return ios;
+  }
 
   for (; i < reported_zones; i++) {
     struct zbd_zone *z = &zone_rep[i];
@@ -326,6 +335,30 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
 
   free(zone_rep);
   start_time_ = time(NULL);
+
+  return IOStatus::OK();
+}
+
+IOStatus ZonedBlockDevice::TestZoneClose(struct zbd_zone *zone) {
+  int status;
+
+  status = zbd_open_zones(this->GetWriteFD(), zone->start, zone->len);
+  if (status) {
+    if (errno == ENOTSUP) {
+      return IOStatus::NotSupported("IOCTL BLKOPENZONE not supported");
+    } else {
+      return IOStatus::IOError();
+    }
+  }
+
+  status = zbd_close_zones(this->GetWriteFD(), zone->start, zone->len);
+  if (status) {
+    if (errno == ENOTSUP) {
+      return IOStatus::NotSupported("IOCTL BLKCLOSEZONE not supported");
+    } else {
+      return IOStatus::IOError();
+    }
+  }
 
   return IOStatus::OK();
 }
