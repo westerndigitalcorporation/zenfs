@@ -579,7 +579,8 @@ IOStatus ZonedBlockDevice::FinishCheapestIOZone() {
   return s;
 }
 
-Zone *ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime) {
+Zone *ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
+                                       IOType io_type) {
   Zone *allocated_zone = nullptr;
   unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
   int new_zone = 0;
@@ -590,14 +591,12 @@ Zone *ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime) {
 
   WaitForOpenIOZoneToken();
 
-  s = ResetUnusedIOZones();
-  if (!s.ok()) {
-    return nullptr;
-  }
-
-  s = ApplyFinishThreshold();
-  if (!s.ok()) {
-    return nullptr;
+  /* Only do zone maintenence for non-wal allocations */
+  if (io_type != IOType::kWAL) {
+    s = ApplyFinishThreshold();
+    if (!s.ok()) {
+      return nullptr;
+    }
   }
 
   /* Try to fill an already open zone(with the best life time diff) */
@@ -627,6 +626,10 @@ Zone *ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime) {
 
   /* If we did not find a good match, allocate an empty one */
   if (best_diff >= LIFETIME_DIFF_NOT_GOOD) {
+    if (io_type == IOType::kWAL && allocated_zone != nullptr) {
+        fprintf(stdout, "\n Did not find a good zone for WAL allocation. Best diff: %d\n",
+                (int)best_diff);
+    }
     /* If we at the active io zone limit, finish an open zone(if available) with
      * least capacity left */
 

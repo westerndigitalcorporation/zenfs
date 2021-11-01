@@ -477,7 +477,7 @@ IOStatus ZenFS::NewWritableFile(const std::string& fname,
   std::shared_ptr<ZoneFile> zoneFile(
       new ZoneFile(zbd_, fname, next_file_id_++));
   zoneFile->SetFileModificationTime(time(0));
-
+  zoneFile->SetIOType(file_opts.io_options.type);
   /* Persist the creation of the file */
   s = SyncFileMetadata(zoneFile);
   if (!s.ok()) {
