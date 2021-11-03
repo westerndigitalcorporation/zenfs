@@ -41,7 +41,6 @@ class Zone {
   uint64_t capacity_; /* remaining capacity */
   uint64_t max_capacity_;
   uint64_t wp_;
-  bool open_for_write_;
   Env::WriteLifeTimeHint lifetime_;
   std::atomic<long> used_capacity_;
 

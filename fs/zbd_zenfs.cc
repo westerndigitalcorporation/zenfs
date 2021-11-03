@@ -46,8 +46,7 @@ Zone::Zone(ZonedBlockDevice *zbd, struct zbd_zone *z)
       busy_(false),
       start_(zbd_zone_start(z)),
       max_capacity_(zbd_zone_capacity(z)),
-      wp_(zbd_zone_wp(z)),
-      open_for_write_(false) {
+      wp_(zbd_zone_wp(z)) {
   lifetime_ = Env::WLTH_NOT_SET;
   used_capacity_ = 0;
   capacity_ = 0;
@@ -55,7 +54,7 @@ Zone::Zone(ZonedBlockDevice *zbd, struct zbd_zone *z)
     capacity_ = zbd_zone_capacity(z) - (zbd_zone_wp(z) - zbd_zone_start(z));
 }
 
-bool Zone::IsUsed() { return (used_capacity_ > 0) || open_for_write_; }
+bool Zone::IsUsed() { return (used_capacity_ > 0); }
 uint64_t Zone::GetCapacityLeft() { return capacity_; }
 bool Zone::IsFull() { return (capacity_ == 0); }
 bool Zone::IsEmpty() { return (wp_ == start_); }
@@ -64,8 +63,7 @@ uint64_t Zone::GetZoneNr() { return start_ / zbd_->GetZoneSize(); }
 IOStatus Zone::CloseWR() {
   const std::lock_guard<std::mutex> lock(zbd_->zone_resources_mtx_);
 
-  assert(open_for_write_);
-  open_for_write_ = false;
+  assert(this->IsBusy());
 
   IOStatus status = Close();
 
@@ -118,7 +116,7 @@ IOStatus Zone::Finish() {
   int fd = zbd_->GetWriteFD();
   int ret;
 
-  assert(!open_for_write_);
+  assert(this->IsBusy());
 
   ret = zbd_finish_zones(fd, start_, zone_sz);
   if (ret) return IOStatus::IOError("Zone finish failed\n");
@@ -134,7 +132,7 @@ IOStatus Zone::Close() {
   int fd = zbd_->GetWriteFD();
   int ret;
 
-  assert(!open_for_write_);
+  assert(this->IsBusy());
 
   if (!(IsEmpty() || IsFull())) {
     ret = zbd_close_zones(fd, start_, zone_sz);
@@ -604,8 +602,6 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
 
   if (allocated_zone) {
     assert(allocated_zone->IsBusy());
-    allocated_zone->open_for_write_ = true;
-    ;
     open_io_zones_++;
     Debug(logger_,
           "Allocating zone(new=%d) start: 0x%lx wp: 0x%lx lt: %d file lt: %d\n",

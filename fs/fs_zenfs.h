@@ -83,15 +83,11 @@ class ZenMetaLog {
     assert(zone->IsBusy());
     zbd_ = zbd;
     zone_ = zone;
-    zone_->open_for_write_ = true;
     bs_ = zbd_->GetBlockSize();
     read_pos_ = zone->start_;
   }
 
-  virtual ~ZenMetaLog() {
-    zone_->open_for_write_ = false;
-    assert(zone_->UnsetBusy());
-  }
+  virtual ~ZenMetaLog() { assert(zone_->UnsetBusy()); }
 
   IOStatus AddRecord(const Slice& slice);
   IOStatus ReadRecord(Slice* record, std::string* scratch);

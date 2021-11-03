@@ -294,8 +294,6 @@ IOStatus ZenFS::RollMetaZoneLocked() {
   old_meta_log.swap(this->meta_log_);
   this->meta_log_.swap(new_meta_log);
 
-  old_meta_log->GetZone()->open_for_write_ = false;
-
   /* Write an end record and finish the meta data zone if there is space left */
   if (old_meta_log->GetZone()->GetCapacityLeft())
     WriteEndRecord(old_meta_log.get());
