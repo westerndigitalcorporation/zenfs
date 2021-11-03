@@ -220,12 +220,12 @@ ZenFS::~ZenFS() {
 }
 
 void ZenFS::LogFiles() {
-  std::map<std::string, ZoneFile*>::iterator it;
+  std::map<std::string, std::shared_ptr<ZoneFile>>::iterator it;
   uint64_t total_size = 0;
 
   Info(logger_, "  Files:\n");
   for (it = files_.begin(); it != files_.end(); it++) {
-    ZoneFile* zFile = it->second;
+    std::shared_ptr<ZoneFile> zFile = it->second;
     std::vector<ZoneExtent*> extents = zFile->GetExtents();
 
     Info(logger_, "    %-45s sz: %lu lh: %d", it->first.c_str(),
@@ -245,9 +245,9 @@ void ZenFS::LogFiles() {
 }
 
 void ZenFS::ClearFiles() {
-  std::map<std::string, ZoneFile*>::iterator it;
+  std::map<std::string, std::shared_ptr<ZoneFile>>::iterator it;
   files_mtx_.lock();
-  for (it = files_.begin(); it != files_.end(); it++) delete it->second;
+  for (it = files_.begin(); it != files_.end(); it++) it->second.reset();
   files_.clear();
   files_mtx_.unlock();
 }
@@ -261,7 +261,7 @@ IOStatus ZenFS::WriteSnapshotLocked(ZenMetaLog* meta_log) {
   s = meta_log->AddRecord(snapshot);
   if (s.ok()) {
     for (auto it = files_.begin(); it != files_.end(); it++) {
-      ZoneFile* zoneFile = it->second;
+      std::shared_ptr<ZoneFile> zoneFile = it->second;
       zoneFile->MetadataSynced();
     }
   }
@@ -357,7 +357,7 @@ IOStatus ZenFS::PersistRecord(std::string record) {
   return s;
 }
 
-IOStatus ZenFS::SyncFileMetadata(ZoneFile* zoneFile) {
+IOStatus ZenFS::SyncFileMetadata(std::shared_ptr<ZoneFile> zoneFile) {
   std::string fileRecord;
   std::string output;
 
@@ -379,16 +379,16 @@ IOStatus ZenFS::SyncFileMetadata(ZoneFile* zoneFile) {
 }
 
 /* Must hold files_mtx_ */
-ZoneFile* ZenFS::GetFileInternal(std::string fname) {
-  ZoneFile* zoneFile = nullptr;
+std::shared_ptr<ZoneFile> ZenFS::GetFileInternal(std::string fname) {
+  std::shared_ptr<ZoneFile> zoneFile(nullptr);
   if (files_.find(fname) != files_.end()) {
     zoneFile = files_[fname];
   }
   return zoneFile;
 }
 
-ZoneFile* ZenFS::GetFile(std::string fname) {
-  ZoneFile* zoneFile = nullptr;
+std::shared_ptr<ZoneFile> ZenFS::GetFile(std::string fname) {
+  std::shared_ptr<ZoneFile> zoneFile(nullptr);
   files_mtx_.lock();
   zoneFile = GetFileInternal(fname);
   files_mtx_.unlock();
@@ -396,7 +396,7 @@ ZoneFile* ZenFS::GetFile(std::string fname) {
 }
 
 IOStatus ZenFS::DeleteFile(std::string fname) {
-  ZoneFile* zoneFile = nullptr;
+  std::shared_ptr<ZoneFile> zoneFile(nullptr);
   IOStatus s;
 
   files_mtx_.lock();
@@ -413,7 +413,7 @@ IOStatus ZenFS::DeleteFile(std::string fname) {
       /* Failed to persist the delete, return to a consistent state */
       files_.insert(std::make_pair(fname.c_str(), zoneFile));
     } else {
-      delete (zoneFile);
+      zoneFile.reset();
     }
   }
   files_mtx_.unlock();
@@ -424,7 +424,7 @@ IOStatus ZenFS::NewSequentialFile(const std::string& fname,
                                   const FileOptions& file_opts,
                                   std::unique_ptr<FSSequentialFile>* result,
                                   IODebugContext* dbg) {
-  ZoneFile* zoneFile = GetFile(fname);
+  std::shared_ptr<ZoneFile> zoneFile = GetFile(fname);
 
   Debug(logger_, "New sequential file: %s direct: %d\n", fname.c_str(),
         file_opts.use_direct_reads);
@@ -442,7 +442,7 @@ IOStatus ZenFS::NewRandomAccessFile(const std::string& fname,
                                     const FileOptions& file_opts,
                                     std::unique_ptr<FSRandomAccessFile>* result,
                                     IODebugContext* dbg) {
-  ZoneFile* zoneFile = GetFile(fname);
+  std::shared_ptr<ZoneFile> zoneFile = GetFile(fname);
 
   Debug(logger_, "New random access file: %s direct: %d\n", fname.c_str(),
         file_opts.use_direct_reads);
@@ -460,7 +460,6 @@ IOStatus ZenFS::NewWritableFile(const std::string& fname,
                                 const FileOptions& file_opts,
                                 std::unique_ptr<FSWritableFile>* result,
                                 IODebugContext* /*dbg*/) {
-  ZoneFile* zoneFile;
   IOStatus s;
 
   Debug(logger_, "New writable file: %s direct: %d\n", fname.c_str(),
@@ -471,13 +470,14 @@ IOStatus ZenFS::NewWritableFile(const std::string& fname,
     if (!s.ok()) return s;
   }
 
-  zoneFile = new ZoneFile(zbd_, fname, next_file_id_++);
+  std::shared_ptr<ZoneFile> zoneFile(
+      new ZoneFile(zbd_, fname, next_file_id_++));
   zoneFile->SetFileModificationTime(time(0));
 
   /* Persist the creation of the file */
   s = SyncFileMetadata(zoneFile);
   if (!s.ok()) {
-    delete zoneFile;
+    zoneFile.reset();
     return s;
   }
 
@@ -531,7 +531,7 @@ IOStatus ZenFS::ReopenWritableFile(const std::string& fname,
 IOStatus ZenFS::GetChildren(const std::string& dir, const IOOptions& options,
                             std::vector<std::string>* result,
                             IODebugContext* dbg) {
-  std::map<std::string, ZoneFile*>::iterator it;
+  std::map<std::string, std::shared_ptr<ZoneFile>>::iterator it;
   std::vector<std::string> auxfiles;
   IOStatus s;
 
@@ -575,7 +575,7 @@ IOStatus ZenFS::GetChildren(const std::string& dir, const IOOptions& options,
 IOStatus ZenFS::DeleteFile(const std::string& fname, const IOOptions& options,
                            IODebugContext* dbg) {
   IOStatus s;
-  ZoneFile* zoneFile = GetFile(fname);
+  std::shared_ptr<ZoneFile> zoneFile = GetFile(fname);
 
   Debug(logger_, "Delete file: %s \n", fname.c_str());
 
@@ -596,7 +596,7 @@ IOStatus ZenFS::DeleteFile(const std::string& fname, const IOOptions& options,
 IOStatus ZenFS::GetFileModificationTime(const std::string& f,
                                         const IOOptions& options,
                                         uint64_t* mtime, IODebugContext* dbg) {
-  ZoneFile* zoneFile;
+  std::shared_ptr<ZoneFile> zoneFile(nullptr);
   IOStatus s;
 
   Debug(logger_, "GetFileModificationTime: %s \n", f.c_str());
@@ -613,7 +613,7 @@ IOStatus ZenFS::GetFileModificationTime(const std::string& f,
 
 IOStatus ZenFS::GetFileSize(const std::string& f, const IOOptions& options,
                             uint64_t* size, IODebugContext* dbg) {
-  ZoneFile* zoneFile;
+  std::shared_ptr<ZoneFile> zoneFile(nullptr);
   IOStatus s;
 
   Debug(logger_, "GetFileSize: %s \n", f.c_str());
@@ -632,7 +632,7 @@ IOStatus ZenFS::GetFileSize(const std::string& f, const IOOptions& options,
 
 IOStatus ZenFS::RenameFile(const std::string& f, const std::string& t,
                            const IOOptions& options, IODebugContext* dbg) {
-  ZoneFile* zoneFile;
+  std::shared_ptr<ZoneFile> zoneFile(nullptr);
   IOStatus s;
 
   Debug(logger_, "Rename file: %s to : %s\n", f.c_str(), t.c_str());
@@ -665,12 +665,12 @@ IOStatus ZenFS::RenameFile(const std::string& f, const std::string& t,
 }
 
 void ZenFS::EncodeSnapshotTo(std::string* output) {
-  std::map<std::string, ZoneFile*>::iterator it;
+  std::map<std::string, std::shared_ptr<ZoneFile>>::iterator it;
   std::string files_string;
   PutFixed32(output, kCompleteFilesSnapshot);
   for (it = files_.begin(); it != files_.end(); it++) {
     std::string file_string;
-    ZoneFile* zFile = it->second;
+    std::shared_ptr<ZoneFile> zFile = it->second;
 
     zFile->EncodeSnapshotTo(&file_string);
     PutLengthPrefixedSlice(&files_string, Slice(file_string));
@@ -693,7 +693,7 @@ void ZenFS::EncodeJson(std::ostream& json_stream) {
 }
 
 Status ZenFS::DecodeFileUpdateFrom(Slice* slice) {
-  ZoneFile* update = new ZoneFile(zbd_, "not_set", 0);
+  std::shared_ptr<ZoneFile> update(new ZoneFile(zbd_, "not_set", 0));
   uint64_t id;
   Status s;
 
@@ -705,12 +705,12 @@ Status ZenFS::DecodeFileUpdateFrom(Slice* slice) {
 
   /* Check if this is an update to an existing file */
   for (auto it = files_.begin(); it != files_.end(); it++) {
-    ZoneFile* zFile = it->second;
+    std::shared_ptr<ZoneFile> zFile = it->second;
     if (id == zFile->GetID()) {
       std::string oldName = zFile->GetFilename();
 
       s = zFile->MergeUpdate(update);
-      delete update;
+      update.reset();
 
       if (!s.ok()) return s;
 
@@ -736,7 +736,7 @@ Status ZenFS::DecodeSnapshotFrom(Slice* input) {
   assert(files_.size() == 0);
 
   while (GetLengthPrefixedSlice(input, &slice)) {
-    ZoneFile* zoneFile = new ZoneFile(zbd_, "not_set", 0);
+    std::shared_ptr<ZoneFile> zoneFile(new ZoneFile(zbd_, "not_set", 0));
     Status s = zoneFile->DecodeFrom(&slice);
     if (!s.ok()) return s;
 
@@ -748,7 +748,8 @@ Status ZenFS::DecodeSnapshotFrom(Slice* input) {
   return Status::OK();
 }
 
-void ZenFS::EncodeFileDeletionTo(ZoneFile* zoneFile, std::string* output) {
+void ZenFS::EncodeFileDeletionTo(std::shared_ptr<ZoneFile> zoneFile,
+                                 std::string* output) {
   std::string file_string;
 
   PutFixed64(&file_string, zoneFile->GetID());
@@ -773,12 +774,12 @@ Status ZenFS::DecodeFileDeletionFrom(Slice* input) {
   if (files_.find(fileName) == files_.end())
     return Status::Corruption("Zone file deletion: no such file");
 
-  ZoneFile* zoneFile = files_[fileName];
+  std::shared_ptr<ZoneFile> zoneFile = files_[fileName];
   if (zoneFile->GetID() != fileID)
     return Status::Corruption("Zone file deletion: file ID missmatch");
 
   files_.erase(fileName);
-  delete zoneFile;
+  zoneFile.reset();
 
   return Status::OK();
 }
@@ -1039,7 +1040,7 @@ std::map<std::string, Env::WriteLifeTimeHint> ZenFS::GetWriteLifeTimeHints() {
   std::map<std::string, Env::WriteLifeTimeHint> hint_map;
 
   for (auto it = files_.begin(); it != files_.end(); it++) {
-    ZoneFile* zoneFile = it->second;
+    std::shared_ptr<ZoneFile> zoneFile = it->second;
     std::string filename = it->first;
     hint_map.insert(std::make_pair(filename, zoneFile->GetWriteLifeTimeHint()));
   }

@@ -92,7 +92,7 @@ class ZoneFile {
   void MetadataSynced() { nr_synced_extents_ = extents_.size(); };
 
   Status DecodeFrom(Slice* input);
-  Status MergeUpdate(ZoneFile* update);
+  Status MergeUpdate(std::shared_ptr<ZoneFile> update);
 
   uint64_t GetID() { return file_id_; }
   size_t GetUniqueId(char* id, size_t max_size);
@@ -104,11 +104,11 @@ class ZonedWritableFile : public FSWritableFile {
   class MetadataWriter {
    public:
     virtual ~MetadataWriter();
-    virtual IOStatus Persist(ZoneFile* zoneFile) = 0;
+    virtual IOStatus Persist(std::shared_ptr<ZoneFile> zoneFile) = 0;
   };
 
   explicit ZonedWritableFile(ZonedBlockDevice* zbd, bool buffered,
-                             ZoneFile* zoneFile,
+                             std::shared_ptr<ZoneFile> zoneFile,
                              MetadataWriter* metadata_writer = nullptr);
   virtual ~ZonedWritableFile();
 
@@ -162,7 +162,7 @@ class ZonedWritableFile : public FSWritableFile {
   uint64_t wp;
   int write_temp;
 
-  ZoneFile* zoneFile_;
+  std::shared_ptr<ZoneFile> zoneFile_;
   MetadataWriter* metadata_writer_;
 
   std::mutex buffer_mtx_;
@@ -170,12 +170,13 @@ class ZonedWritableFile : public FSWritableFile {
 
 class ZonedSequentialFile : public FSSequentialFile {
  private:
-  ZoneFile* zoneFile_;
+  std::shared_ptr<ZoneFile> zoneFile_;
   uint64_t rp;
   bool direct_;
 
  public:
-  explicit ZonedSequentialFile(ZoneFile* zoneFile, const FileOptions& file_opts)
+  explicit ZonedSequentialFile(std::shared_ptr<ZoneFile> zoneFile,
+                               const FileOptions& file_opts)
       : zoneFile_(zoneFile), rp(0), direct_(file_opts.use_direct_reads) {}
 
   IOStatus Read(size_t n, const IOOptions& options, Slice* result,
@@ -198,11 +199,11 @@ class ZonedSequentialFile : public FSSequentialFile {
 
 class ZonedRandomAccessFile : public FSRandomAccessFile {
  private:
-  ZoneFile* zoneFile_;
+  std::shared_ptr<ZoneFile> zoneFile_;
   bool direct_;
 
  public:
-  explicit ZonedRandomAccessFile(ZoneFile* zoneFile,
+  explicit ZonedRandomAccessFile(std::shared_ptr<ZoneFile> zoneFile,
                                  const FileOptions& file_opts)
       : zoneFile_(zoneFile), direct_(file_opts.use_direct_reads) {}
 

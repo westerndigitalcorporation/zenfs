@@ -169,7 +169,7 @@ Status ZoneFile::DecodeFrom(Slice* input) {
   return Status::OK();
 }
 
-Status ZoneFile::MergeUpdate(ZoneFile* update) {
+Status ZoneFile::MergeUpdate(std::shared_ptr<ZoneFile> update) {
   if (file_id_ != update->GetID())
     return Status::Corruption("ZoneFile update", "ID missmatch");
 
@@ -398,7 +398,7 @@ IOStatus ZoneFile::SetWriteLifeTimeHint(Env::WriteLifeTimeHint lifetime) {
 }
 
 ZonedWritableFile::ZonedWritableFile(ZonedBlockDevice* zbd, bool _buffered,
-                                     ZoneFile* zoneFile,
+                                     std::shared_ptr<ZoneFile> zoneFile,
                                      MetadataWriter* metadata_writer) {
   wp = zoneFile->GetFileSize();
   assert(wp == 0);

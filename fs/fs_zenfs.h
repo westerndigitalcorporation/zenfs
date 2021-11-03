@@ -100,7 +100,7 @@ class ZenMetaLog {
 
 class ZenFS : public FileSystemWrapper {
   ZonedBlockDevice* zbd_;
-  std::map<std::string, ZoneFile*> files_;
+  std::map<std::string, std::shared_ptr<ZoneFile>> files_;
   std::mutex files_mtx_;
   std::shared_ptr<Logger> logger_;
   std::atomic<uint64_t> next_file_id_;
@@ -114,7 +114,7 @@ class ZenFS : public FileSystemWrapper {
 
   struct MetadataWriter : public ZonedWritableFile::MetadataWriter {
     ZenFS* zenFS;
-    IOStatus Persist(ZoneFile* zoneFile) {
+    IOStatus Persist(std::shared_ptr<ZoneFile> zoneFile) {
       Debug(zenFS->GetLogger(), "Syncing metadata for: %s",
             zoneFile->GetFilename().c_str());
       return zenFS->SyncFileMetadata(zoneFile);
@@ -137,10 +137,11 @@ class ZenFS : public FileSystemWrapper {
   IOStatus RollMetaZoneLocked();
   IOStatus PersistSnapshot(ZenMetaLog* meta_writer);
   IOStatus PersistRecord(std::string record);
-  IOStatus SyncFileMetadata(ZoneFile* zoneFile);
+  IOStatus SyncFileMetadata(std::shared_ptr<ZoneFile> zoneFile);
 
   void EncodeSnapshotTo(std::string* output);
-  void EncodeFileDeletionTo(ZoneFile* zoneFile, std::string* output);
+  void EncodeFileDeletionTo(std::shared_ptr<ZoneFile> zoneFile,
+                            std::string* output);
 
   Status DecodeSnapshotFrom(Slice* input);
   Status DecodeFileUpdateFrom(Slice* slice);
@@ -158,8 +159,8 @@ class ZenFS : public FileSystemWrapper {
     return path;
   }
 
-  ZoneFile* GetFileInternal(std::string fname);
-  ZoneFile* GetFile(std::string fname);
+  std::shared_ptr<ZoneFile> GetFileInternal(std::string fname);
+  std::shared_ptr<ZoneFile> GetFile(std::string fname);
   IOStatus DeleteFile(std::string fname);
 
  public:
