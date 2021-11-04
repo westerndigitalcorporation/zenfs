@@ -489,7 +489,7 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
   int new_zone = 0;
   Status s;
   bool ok = false;
-  (void)ok; /* avoid compile warning in non-debug builds when assertions are disabled */
+  (void)ok;
 
   io_zones_mtx.lock();
 
