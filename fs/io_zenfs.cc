@@ -225,10 +225,10 @@ ZoneFile::~ZoneFile() {
 
 void ZoneFile::CloseWR() {
   if (active_zone_) {
-    IOStatus status = active_zone_->CloseWR();
+    IOStatus status = active_zone_->Close();
     ReleaseActiveZone();
     if (status.ok()) {
-      zbd_->NotifyIOZoneClosed();
+      zbd_->PutOpenIOZoneToken();
     }
   }
   open_for_wr_ = false;
@@ -359,7 +359,7 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
   IOStatus s;
 
   if (!active_zone_) {
-    Zone* zone = zbd_->AllocateZone(lifetime_);
+    Zone* zone = zbd_->AllocateIOZone(lifetime_);
     if (!zone) {
       return IOStatus::NoSpace(
           "Out of space: Zone allocation failure while setting active zone");
@@ -373,13 +373,13 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
     if (active_zone_->capacity_ == 0) {
       PushExtent();
 
-      IOStatus status = active_zone_->CloseWR();
+      IOStatus status = active_zone_->Close();
       ReleaseActiveZone();
       if (status.ok()) {
-        zbd_->NotifyIOZoneClosed();
+        this->zbd_->PutOpenIOZoneToken();
       }
 
-      Zone* zone = zbd_->AllocateZone(lifetime_);
+      Zone* zone = zbd_->AllocateIOZone(lifetime_);
       if (!zone) {
         return IOStatus::NoSpace(
             "Out of space: Zone allocation failure while replacing active "

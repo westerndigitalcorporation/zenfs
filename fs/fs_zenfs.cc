@@ -985,7 +985,11 @@ Status ZenFS::Mount(bool readonly) {
 
   if (!readonly) {
     Info(logger_, "Resetting unused IO Zones..");
-    zbd_->ResetUnusedIOZones();
+    s = zbd_->ResetUnusedIOZones();
+    if (!s.ok()) {
+      Error(logger_, "Failed resetting unused IO Zones");
+      return Status::IOError("Failed to reset unused IO Zones during mount");
+    }
     Info(logger_, "  Done");
   }
 

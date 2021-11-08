@@ -43,6 +43,7 @@ class Zone {
   uint64_t wp_;
   Env::WriteLifeTimeHint lifetime_;
   std::atomic<long> used_capacity_;
+  bool isIOZone_;
 
   IOStatus Reset();
   IOStatus Finish();
@@ -68,7 +69,6 @@ class Zone {
 
   void EncodeJson(std::ostream &json_stream);
 
-  IOStatus CloseWR(); /* Done writing */
 };
 
 class ZonedBlockDevice {
@@ -107,7 +107,7 @@ class ZonedBlockDevice {
 
   Zone *GetIOZone(uint64_t offset);
 
-  Zone *AllocateZone(Env::WriteLifeTimeHint lifetime);
+  Zone *AllocateIOZone(Env::WriteLifeTimeHint lifetime);
   Zone *AllocateMetaZone();
 
   uint64_t GetFreeSpace();
@@ -117,7 +117,6 @@ class ZonedBlockDevice {
   std::string GetFilename();
   uint32_t GetBlockSize();
 
-  void ResetUnusedIOZones();
   void LogZoneStats();
   void LogZoneUsage();
 
@@ -131,15 +130,21 @@ class ZonedBlockDevice {
 
   void SetFinishTreshold(uint32_t threshold) { finish_threshold_ = threshold; }
 
-  void NotifyIOZoneFull();
-  void NotifyIOZoneClosed();
+  void PutOpenIOZoneToken();
+  void PutActiveIOZoneToken();
 
   void EncodeJson(std::ostream &json_stream);
 
   std::mutex zone_resources_mtx_; /* Protects active/open io zones */
+  IOStatus ResetUnusedIOZones();
 
  private:
   std::string ErrorToString(int err);
+  bool GetActiveIOZoneTokenIfAvailable();
+  void WaitForOpenIOZoneToken();
+
+  IOStatus ApplyFinishThreshold();
+  IOStatus FinishCheapestIOZone();
 };
 
 }  // namespace ROCKSDB_NAMESPACE
