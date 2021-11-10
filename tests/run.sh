@@ -8,12 +8,17 @@ TESTS=$(ls $TEST_DIR/*_*.sh)
 OK_TESTS=0
 FAILED_TESTS=0
 
-export TOOLS_DIR="../../../"
-export ZENFS_DIR="../util/"
-export STRESS_CMD="../../../db_stress"
+TOOLS_DIR=${TOOLS_DIR:-"../../../"}
+ZENFS_DIR=${ZENFS_DIR:-"../util/"}
+STRESS_CMD="../../../db_stress"
 
-RESULT_PATH="results/$NAME"
-RESULT_DIR="results/$NAME/$TEST_DIR"
+export TOOLS_DIR
+export ZENFS_DIR
+export STRESS_CMD
+
+OUTPUT_DIR=${OUTPUT_DIR:-results}
+RESULT_PATH="${OUTPUT_DIR}/$NAME"
+RESULT_DIR="${RESULT_PATH}/$TEST_DIR"
 
 mkdir -p $RESULT_DIR
 rm -rf $RESULT_DIR/*
