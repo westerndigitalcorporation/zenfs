@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR=$(cd $(dirname "${BASH_SOURCE[0]}") && pwd)
+cd $SCRIPT_DIR
+
 NAME=$1
 TEST_DIR=$2
 TESTS=$(ls $TEST_DIR/*_*.sh)
