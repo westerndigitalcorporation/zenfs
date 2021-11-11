@@ -722,12 +722,6 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
     return s;
   }
 
-  /* TODO: this should be done in context of deletes */
-  s = ResetUnusedIOZones();
-  if (!s.ok()) {
-    return s;
-  }
-
   WaitForOpenIOZoneToken();
 
   /* Try to fill an already open zone(with the best life time diff) */
