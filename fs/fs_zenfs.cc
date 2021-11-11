@@ -431,25 +431,30 @@ IOStatus ZenFS::DeleteFile(std::string fname) {
   std::shared_ptr<ZoneFile> zoneFile(nullptr);
   IOStatus s;
 
-  std::lock_guard<std::mutex> lock(files_mtx_);
-  zoneFile = GetFileInternal(fname);
-  if (zoneFile != nullptr) {
-    std::string record;
+  {
+    std::lock_guard<std::mutex> lock(files_mtx_);
+    zoneFile = GetFileInternal(fname);
+    if (zoneFile != nullptr) {
+      std::string record;
 
-    zoneFile = files_[fname];
-    files_.erase(fname);
+      zoneFile = files_[fname];
+      files_.erase(fname);
 
-    EncodeFileDeletionTo(zoneFile, &record);
-    s = PersistRecord(record);
-    if (!s.ok()) {
-      /* Failed to persist the delete, return to a consistent state */
-      files_.insert(std::make_pair(fname.c_str(), zoneFile));
+      EncodeFileDeletionTo(zoneFile, &record);
+      s = PersistRecord(record);
+      if (!s.ok()) {
+        /* Failed to persist the delete, return to a consistent state */
+        files_.insert(std::make_pair(fname.c_str(), zoneFile));
+      } else {
+        zoneFile.reset();
+      }
     } else {
-      zoneFile.reset();
+      s = IOStatus::NotFound("ZenFS::DeleteFile(): File not found");
     }
-  } else {
-    s = IOStatus::NotFound("ZenFS::DeleteFile(): File not found");
   }
+
+  if (s.ok()) s = zbd_->ResetUnusedIOZones();
+
   return s;
 }
 
