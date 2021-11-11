@@ -417,6 +417,10 @@ IOStatus ZenFS::DeleteFile(std::string fname) {
     }
   }
   files_mtx_.unlock();
+
+  if (s.ok())
+    zbd_->ResetUnusedIOZones();
+
   return s;
 }
 
