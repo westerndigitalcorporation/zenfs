@@ -370,7 +370,6 @@ void ZonedBlockDevice::LogZoneStats() {
   uint64_t reclaimable_capacity = 0;
   uint64_t reclaimables_max_capacity = 0;
   uint64_t active = 0;
-  io_zones_mtx.lock();
 
   for (const auto z : io_zones) {
     used_capacity += z->used_capacity_;
@@ -393,7 +392,6 @@ void ZonedBlockDevice::LogZoneStats() {
        100 * reclaimable_capacity / reclaimables_max_capacity, active,
        active_io_zones_.load(), open_io_zones_.load());
 
-  io_zones_mtx.unlock();
 }
 
 void ZonedBlockDevice::LogZoneUsage() {
@@ -597,22 +595,19 @@ Zone *ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime) {
   /* ok is unused in non-debug-builds, due to assertions being disabled */
   (void)ok;
 
-  io_zones_mtx.lock();
-
   WaitForOpenIOZoneToken();
 
   s = ResetUnusedIOZones();
   if (!s.ok()) {
-    io_zones_mtx.unlock();
+    PutOpenIOZoneToken();
     return nullptr;
   }
 
   s = ApplyFinishThreshold();
   if (!s.ok()) {
-    io_zones_mtx.unlock();
+    PutOpenIOZoneToken();
     return nullptr;
   }
-
 
   /* Try to fill an already open zone(with the best life time diff) */
   for (const auto z : io_zones) {
@@ -650,16 +645,13 @@ Zone *ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime) {
       allocated_zone = nullptr;
     }
 
-    bool active_zone_aquired = GetActiveIOZoneTokenIfAvailable();
-    if (!active_zone_aquired) {
+    /* We have to make sure we can open an empty zone */
+    while (!GetActiveIOZoneTokenIfAvailable()) {
       s = FinishCheapestIOZone();
       if (!s.ok()) {
         Debug(logger_, "Failed finishing zone");
       }
-      active_zone_aquired = GetActiveIOZoneTokenIfAvailable();
     }
-
-   assert(active_zone_aquired); /* No one can race us, yet */
 
     for (const auto z : io_zones) {
       if (z->Acquire()) {
@@ -685,7 +677,6 @@ Zone *ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime) {
     PutOpenIOZoneToken();
   }
 
-  io_zones_mtx.unlock();
   LogZoneStats();
 
   return allocated_zone;
