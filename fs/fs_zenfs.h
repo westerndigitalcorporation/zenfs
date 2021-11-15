@@ -88,6 +88,7 @@ class ZenMetaLog {
   }
 
   virtual ~ZenMetaLog() {
+    // TODO: report async error status
     bool ok = zone_->Release();
     assert(ok);
     (void)ok;

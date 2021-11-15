@@ -169,6 +169,16 @@ IOStatus Zone::Append(char *data, uint32_t size) {
   return IOStatus::OK();
 }
 
+inline IOStatus Zone::CheckRelease() {
+  if (!Release()) {
+    assert(false);
+    return IOStatus::Corruption("Failed to unset busy flag of zone " +
+                                std::to_string(GetZoneNr()));
+  }
+
+  return IOStatus::OK();
+}
+
 Zone *ZonedBlockDevice::GetIOZone(uint64_t offset) {
   for (const auto z : io_zones)
     if (z->start_ <= offset && offset < (z->start_ + zone_sz_)) return z;
@@ -310,15 +320,16 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   open_io_zones_ = 0;
 
   for (; i < reported_zones; i++) {
-    bool ok = false;
-
     struct zbd_zone *z = &zone_rep[i];
     /* Only use sequential write required zones */
     if (zbd_zone_type(z) == ZBD_ZONE_TYPE_SWR) {
       if (!zbd_zone_offline(z)) {
         Zone *newZone = new Zone(this, z);
-        ok = newZone->Acquire();
-        assert(ok);
+        if (!newZone->Acquire()) {
+          assert(false);
+          return IOStatus::Corruption("Failed to set busy flag of zone " +
+                                      std::to_string(newZone->GetZoneNr()));
+        }
         io_zones.push_back(newZone);
         if (zbd_zone_imp_open(z) || zbd_zone_exp_open(z) ||
             zbd_zone_closed(z)) {
@@ -329,9 +340,8 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
             }
           }
         }
-        ok = newZone->Release();
-        assert(ok);
-        (void)(ok);
+        IOStatus status = newZone->CheckRelease();
+        if (!status.ok()) return status;
       }
     }
   }
@@ -452,26 +462,30 @@ unsigned int GetLifeTimeDiff(Env::WriteLifeTimeHint zone_lifetime,
   return LIFETIME_DIFF_NOT_GOOD;
 }
 
-Zone *ZonedBlockDevice::AllocateMetaZone() {
+IOStatus ZonedBlockDevice::AllocateMetaZone(Zone **out_meta_zone) {
+  assert(out_meta_zone);
+  *out_meta_zone = nullptr;
   for (const auto z : meta_zones) {
     /* If the zone is not used, reset and use it */
     if (z->Acquire()) {
       if (!z->IsUsed()) {
         if (!z->IsEmpty() && !z->Reset().ok()) {
           Warn(logger_, "Failed resetting zone!");
-          bool ok = z->Release();
-          assert(ok);
-          (void)ok;
+          IOStatus status = z->CheckRelease();
+          if (!status.ok()) return status;
           continue;
         }
-        return z;
+        *out_meta_zone = z;
+        return IOStatus::OK();
       }
     }
   }
-  return nullptr;
+  assert(true);
+  Error(logger_, "Out of metadata zones, we should go to read only now.");
+  return IOStatus::NoSpace("Out of metadata zones");
 }
 
-void ZonedBlockDevice::ResetUnusedIOZones() {
+Status ZonedBlockDevice::ResetUnusedIOZones() {
   const std::lock_guard<std::mutex> lock(zone_resources_mtx_);
   /* Reset any unused zones */
   for (const auto z : io_zones) {
@@ -480,11 +494,11 @@ void ZonedBlockDevice::ResetUnusedIOZones() {
         if (!z->IsFull()) active_io_zones_--;
         if (!z->Reset().ok()) Warn(logger_, "Failed reseting zone");
       }
-      bool ok = z->Release();
-      assert(ok);
-      (void)ok;
+      IOStatus status = z->CheckRelease();
+      if (!status.ok()) return status;
     }
   }
+  return Status::OK();
 }
 
 IOStatus ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime,
@@ -523,8 +537,8 @@ IOStatus ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime,
     }
 
     if (z->IsEmpty() || (z->IsFull() && z->IsUsed())) {
-      ok = z->Release();
-      assert(ok);
+      IOStatus status = z->CheckRelease();
+      if (!status.ok()) return status;
       continue;
     }
 
@@ -536,8 +550,8 @@ IOStatus ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime,
         return s;
       }
 
-      ok = z->Release();
-      assert(ok);
+      IOStatus status = z->CheckRelease();
+      if (!status.ok()) return status;
       continue;
     }
 
@@ -556,16 +570,16 @@ IOStatus ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime,
       if (finish_victim == nullptr) {
         finish_victim = z;
       } else if (finish_victim->capacity_ > z->capacity_) {
-        ok = finish_victim->Release();
-        assert(ok);
+        IOStatus status = finish_victim->CheckRelease();
+        if (!status.ok()) return status;
         finish_victim = z;
       } else {
-        ok = z->Release();
-        assert(ok);
+        IOStatus status = z->CheckRelease();
+        if (!status.ok()) return status;
       }
     } else {
-      ok = z->Release();
-      assert(ok);
+      IOStatus status = z->CheckRelease();
+      if (!status.ok()) return status;
     }
   }
 
@@ -578,18 +592,18 @@ IOStatus ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime,
         unsigned int diff = GetLifeTimeDiff(z->lifetime_, file_lifetime);
         if (diff <= best_diff) {
           if (allocated_zone != nullptr) {
-            ok = allocated_zone->Release();
-            assert(ok);
+            IOStatus status = allocated_zone->CheckRelease();
+            if (!status.ok()) return status;
           }
           allocated_zone = z;
           best_diff = diff;
         } else {
-          ok = z->Release();
-          assert(ok);
+          IOStatus status = z->CheckRelease();
+          if (!status.ok()) return status;
         }
       } else {
-        ok = z->Release();
-        assert(ok);
+        IOStatus status = z->CheckRelease();
+        if (!status.ok()) return status;
       }
     }
   }
@@ -617,16 +631,16 @@ IOStatus ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime,
           if (z->IsEmpty()) {
             z->lifetime_ = file_lifetime;
             if (allocated_zone != nullptr) {
-              ok = allocated_zone->Release();
-              assert(ok);
+              IOStatus status = allocated_zone->CheckRelease();
+              if (!status.ok()) return status;
             }
             allocated_zone = z;
             active_io_zones_++;
             new_zone = 1;
             break;
           } else {
-            ok = z->Release();
-            assert(ok);
+            IOStatus status = z->CheckRelease();
+            if (!status.ok()) return status;
           }
         }
       }
@@ -634,8 +648,8 @@ IOStatus ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime,
   }
 
   if (finish_victim != nullptr) {
-    ok = finish_victim->Release();
-    assert(ok);
+    IOStatus status = finish_victim->CheckRelease();
+    if (!status.ok()) return status;
     finish_victim = nullptr;
   }
 
