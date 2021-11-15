@@ -1,4 +1,4 @@
-# ZenFS
+# ZenFS: RocksDB Storage Backend for ZNS SSDs and SMR HDDs
 
 ZenFS is a file system plugin that utilizes RockDB's FileSystem interface to
 place files into zones on a raw zoned block device. By separating files into
@@ -7,6 +7,13 @@ times the system write amplification is greatly reduced compared to
 conventional block devices. ZenFS ensures that there is no background
 garbage collection in the file system or on the disk, improving performance
 in terms of throughput, tail latencies and disk endurance.
+
+## Community
+For help or questions about zenfs usage (e.g. "how do I do X?") see below, on join us on [Matrix](https://app.element.io/#/room/#zonedstorage-general:matrix.org), or on [Slack](https://join.slack.com/t/zonedstorage/shared_invite/zt-uyfut5xe-nKajp9YRnEWqiD4X6RkTFw).
+
+To report a bug, file a documentation issue, or submit a feature request, please open a GitHub issue.
+
+For release announcements and other discussions, please subscribe to this repository or join us on Matrix or Slack.
 
 ## Dependencies
 
