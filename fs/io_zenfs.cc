@@ -368,9 +368,7 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
   if (!active_zone_) {
     Zone* zone = nullptr;
     s = zbd_->AllocateZone(lifetime_, &zone);
-    if (!s.ok()) {
-      return s;
-    }
+    if (!s.ok()) return s;
 
     if (!zone) {
       return IOStatus::NoSpace(
@@ -387,18 +385,13 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
       PushExtent();
 
       s = active_zone_->CloseWR();
-      if (!s.ok()) {
-        return s;
-      }
+      if (!s.ok()) return s;
       ReleaseActiveZone();
       zbd_->NotifyIOZoneClosed();
 
       Zone* zone = nullptr;
       s = zbd_->AllocateZone(lifetime_, &zone);
-
-      if (!s.ok()) {
-        return s;
-      }
+      if (!s.ok()) return s;
 
       if (!zone) {
         return IOStatus::NoSpace(

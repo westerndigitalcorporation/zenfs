@@ -69,6 +69,8 @@ class Zone {
   void EncodeJson(std::ostream &json_stream);
 
   IOStatus CloseWR(); /* Done writing */
+
+  inline IOStatus CheckRelease();
 };
 
 class ZonedBlockDevice {
@@ -110,7 +112,7 @@ class ZonedBlockDevice {
   Zone *GetIOZone(uint64_t offset);
 
   IOStatus AllocateZone(Env::WriteLifeTimeHint file_lifetime, Zone **out_zone);
-  Zone *AllocateMetaZone();
+  IOStatus AllocateMetaZone(Zone **out_meta_zone);
 
   uint64_t GetFreeSpace();
   uint64_t GetUsedSpace();
@@ -119,7 +121,7 @@ class ZonedBlockDevice {
   std::string GetFilename();
   uint32_t GetBlockSize();
 
-  void ResetUnusedIOZones();
+  Status ResetUnusedIOZones();
   void LogZoneStats();
   void LogZoneUsage();
 
