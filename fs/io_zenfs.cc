@@ -361,7 +361,8 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
   if (!active_zone_) {
     Zone* zone = zbd_->AllocateZone(lifetime_);
     if (!zone) {
-      return IOStatus::NoSpace("Zone allocation failure, no active zone\n");
+      return IOStatus::NoSpace(
+          "Out of space: Zone allocation failure while setting active zone");
     }
     this->SetActiveZone(zone);
     extent_start_ = active_zone_->wp_;
@@ -381,7 +382,8 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
       Zone* zone = zbd_->AllocateZone(lifetime_);
       if (!zone) {
         return IOStatus::NoSpace(
-            "Zone allocation failure, current zone full\n");
+            "Out of space: Zone allocation failure while replacing active "
+            "zone");
       }
       this->SetActiveZone(zone);
 
