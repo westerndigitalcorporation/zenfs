@@ -89,7 +89,7 @@ class ZenMetaLog {
   }
 
   virtual ~ZenMetaLog() {
-    bool ok = zone_->UnsetBusy();
+    bool ok = zone_->Release();
     assert(ok);
     _unused(ok);
   }

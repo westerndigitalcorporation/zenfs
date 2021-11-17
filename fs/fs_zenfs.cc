@@ -875,7 +875,7 @@ Status ZenFS::Mount(bool readonly) {
     std::string scratch;
     Slice super_record;
 
-    bool ok = z->SetBusy();
+    bool ok = z->Acquire();
     assert(ok);
     _unused(ok);
 
@@ -1008,7 +1008,7 @@ Status ZenFS::MkFS(std::string aux_fs_path, uint32_t finish_threshold) {
   zbd_->ResetUnusedIOZones();
 
   for (const auto mz : metazones) {
-    bool ok = mz->SetBusy();
+    bool ok = mz->Acquire();
     assert(ok);
     _unused(ok);
 
@@ -1016,7 +1016,7 @@ Status ZenFS::MkFS(std::string aux_fs_path, uint32_t finish_threshold) {
       if (!meta_zone) {
         meta_zone = mz;
       } else {
-        ok = mz->UnsetBusy();
+        ok = mz->Release();
         assert(ok);
       }
     } else {

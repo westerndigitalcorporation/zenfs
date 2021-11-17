@@ -55,12 +55,12 @@ class Zone {
   uint64_t GetZoneNr();
   uint64_t GetCapacityLeft();
   bool IsBusy() { return this->busy_.load(std::memory_order_relaxed); }
-  bool SetBusy() {
+  bool Acquire() {
     bool expected = false;
     return this->busy_.compare_exchange_strong(expected, true,
                                                std::memory_order_acq_rel);
   }
-  bool UnsetBusy() {
+  bool Release() {
     bool expected = true;
     return this->busy_.compare_exchange_strong(expected, false,
                                                std::memory_order_acq_rel);

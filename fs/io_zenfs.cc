@@ -414,7 +414,7 @@ IOStatus ZoneFile::SetWriteLifeTimeHint(Env::WriteLifeTimeHint lifetime) {
 
 void ZoneFile::ReleaseActiveZone() {
   assert(this->active_zone_ != nullptr);
-  bool ok = this->active_zone_->UnsetBusy();
+  bool ok = this->active_zone_->Release();
   assert(ok);
   _unused(ok);
   this->active_zone_ = nullptr;
