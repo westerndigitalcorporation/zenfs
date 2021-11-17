@@ -23,6 +23,7 @@
 #include <utility>
 #include <vector>
 
+#include "debug.h"
 #include "rocksdb/env.h"
 #include "util/coding.h"
 
@@ -413,7 +414,9 @@ IOStatus ZoneFile::SetWriteLifeTimeHint(Env::WriteLifeTimeHint lifetime) {
 
 void ZoneFile::ReleaseActiveZone() {
   assert(this->active_zone_ != nullptr);
-  assert(this->active_zone_->UnsetBusy());
+  bool ok = this->active_zone_->UnsetBusy();
+  assert(ok);
+  _unused(ok);
   this->active_zone_ = nullptr;
 }
 

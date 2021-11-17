@@ -875,7 +875,10 @@ Status ZenFS::Mount(bool readonly) {
     std::string scratch;
     Slice super_record;
 
-    assert(z->SetBusy());
+    bool ok = z->SetBusy();
+    assert(ok);
+    _unused(ok);
+
     log.reset(new ZenMetaLog(zbd_, z));
 
     if (!log->ReadRecord(&super_record, &scratch).ok()) continue;
@@ -1005,12 +1008,16 @@ Status ZenFS::MkFS(std::string aux_fs_path, uint32_t finish_threshold) {
   zbd_->ResetUnusedIOZones();
 
   for (const auto mz : metazones) {
-    assert(mz->SetBusy());
+    bool ok = mz->SetBusy();
+    assert(ok);
+    _unused(ok);
+
     if (mz->Reset().ok()) {
       if (!meta_zone) {
         meta_zone = mz;
       } else {
-        assert(mz->UnsetBusy());
+        ok = mz->UnsetBusy();
+        assert(ok);
       }
     } else {
       Warn(logger_, "Failed to reset meta zone\n");

@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 
+#include "debug.h"
 #include "rocksdb/env.h"
 
 #define KB (1024)
@@ -305,12 +306,16 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   open_io_zones_ = 0;
 
   for (; i < reported_zones; i++) {
+    bool ok = false;
+    _unused(ok);
+
     struct zbd_zone *z = &zone_rep[i];
     /* Only use sequential write required zones */
     if (zbd_zone_type(z) == ZBD_ZONE_TYPE_SWR) {
       if (!zbd_zone_offline(z)) {
         Zone *newZone = new Zone(this, z);
-        assert(newZone->SetBusy());
+        ok = newZone->SetBusy();
+        assert(ok);
         io_zones.push_back(newZone);
         if (zbd_zone_imp_open(z) || zbd_zone_exp_open(z) ||
             zbd_zone_closed(z)) {
@@ -321,7 +326,8 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
             }
           }
         }
-        assert(newZone->UnsetBusy());
+        ok = newZone->UnsetBusy();
+        assert(ok);
       }
     }
   }
@@ -449,7 +455,9 @@ Zone *ZonedBlockDevice::AllocateMetaZone() {
       if (!z->IsUsed()) {
         if (!z->IsEmpty() && !z->Reset().ok()) {
           Warn(logger_, "Failed resetting zone!");
-          assert(z->UnsetBusy());
+          bool ok = z->UnsetBusy();
+          assert(ok);
+          _unused(ok);
           continue;
         }
         return z;
@@ -468,7 +476,9 @@ void ZonedBlockDevice::ResetUnusedIOZones() {
         if (!z->IsFull()) active_io_zones_--;
         if (!z->Reset().ok()) Warn(logger_, "Failed reseting zone");
       }
-      assert(z->UnsetBusy());
+      bool ok = z->UnsetBusy();
+      assert(ok);
+      _unused(ok);
     }
   }
 }
@@ -479,6 +489,8 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
   unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
   int new_zone = 0;
   Status s;
+  bool ok = false;
+  _unused(ok);
 
   io_zones_mtx.lock();
 
@@ -498,7 +510,8 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
     }
 
     if (z->IsEmpty() || (z->IsFull() && z->IsUsed())) {
-      assert(z->UnsetBusy());
+      ok = z->UnsetBusy();
+      assert(ok);
       continue;
     }
 
@@ -509,7 +522,8 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
         Debug(logger_, "Failed resetting zone !");
       }
 
-      assert(z->UnsetBusy());
+      ok = z->UnsetBusy();
+      assert(ok);
       continue;
     }
 
@@ -527,13 +541,16 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
       if (finish_victim == nullptr) {
         finish_victim = z;
       } else if (finish_victim->capacity_ > z->capacity_) {
-        assert(finish_victim->UnsetBusy());
+        ok = finish_victim->UnsetBusy();
+        assert(ok);
         finish_victim = z;
       } else {
-        assert(z->UnsetBusy());
+        ok = z->UnsetBusy();
+        assert(ok);
       }
     } else {
-      assert(z->UnsetBusy());
+      ok = z->UnsetBusy();
+      assert(ok);
     }
   }
 
@@ -546,15 +563,18 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
         unsigned int diff = GetLifeTimeDiff(z->lifetime_, file_lifetime);
         if (diff <= best_diff) {
           if (allocated_zone != nullptr) {
-            assert(allocated_zone->UnsetBusy());
+            ok = allocated_zone->UnsetBusy();
+            assert(ok);
           }
           allocated_zone = z;
           best_diff = diff;
         } else {
-          assert(z->UnsetBusy());
+          ok = z->UnsetBusy();
+          assert(ok);
         }
       } else {
-        assert(z->UnsetBusy());
+        ok = z->UnsetBusy();
+        assert(ok);
       }
     }
   }
@@ -581,14 +601,16 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
           if (z->IsEmpty()) {
             z->lifetime_ = file_lifetime;
             if (allocated_zone != nullptr) {
-              assert(allocated_zone->UnsetBusy());
+              ok = allocated_zone->UnsetBusy();
+              assert(ok);
             }
             allocated_zone = z;
             active_io_zones_++;
             new_zone = 1;
             break;
           } else {
-            assert(z->UnsetBusy());
+            ok = z->UnsetBusy();
+            assert(ok);
           }
         }
       }
@@ -596,12 +618,14 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
   }
 
   if (finish_victim != nullptr) {
-    assert(finish_victim->UnsetBusy());
+    ok = finish_victim->UnsetBusy();
+    assert(ok);
     finish_victim = nullptr;
   }
 
   if (allocated_zone) {
-    assert(allocated_zone->IsBusy());
+    ok = allocated_zone->IsBusy();
+    assert(ok);
     open_io_zones_++;
     Debug(logger_,
           "Allocating zone(new=%d) start: 0x%lx wp: 0x%lx lt: %d file lt: %d\n",

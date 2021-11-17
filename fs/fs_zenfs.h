@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "debug.h"
 #include "io_zenfs.h"
 #include "rocksdb/env.h"
 #include "rocksdb/file_system.h"
@@ -87,7 +88,11 @@ class ZenMetaLog {
     read_pos_ = zone->start_;
   }
 
-  virtual ~ZenMetaLog() { assert(zone_->UnsetBusy()); }
+  virtual ~ZenMetaLog() {
+    bool ok = zone_->UnsetBusy();
+    assert(ok);
+    _unused(ok);
+  }
 
   IOStatus AddRecord(const Slice& slice);
   IOStatus ReadRecord(Slice* record, std::string* scratch);
