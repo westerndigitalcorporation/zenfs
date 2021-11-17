@@ -12,6 +12,7 @@
 #include <sys/types.h>
 
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -69,21 +70,78 @@ Status zenfs_mount(std::unique_ptr<ZonedBlockDevice> &zbd,
   return s;
 }
 
+int is_dir(const char *path) {
+  struct stat st;
+  if (stat(path, &st) != 0) {
+    fprintf(stderr, "Failed to stat %s\n", path);
+    return 1;
+  }
+  return S_ISDIR(st.st_mode);
+}
+
+// Create or check pre-existing aux directory and fail if it is
+// inaccessible by current user and if it has previous data
+int create_aux_dir(const char *path) {
+  struct dirent *dent;
+  size_t nfiles = 0;
+  int ret = 0;
+
+  errno = 0;
+  ret = mkdir(path, 0750);
+  if (ret < 0 && EEXIST != errno) {
+    fprintf(stderr, "Failed to create aux directory %s: %s\n", path,
+            strerror(errno));
+    return 1;
+  }
+  // The aux_path is now available, check if it is a directory infact
+  // and is empty and the user has access permission
+
+  if (!is_dir(path)) {
+    fprintf(stderr, "Aux path %s is not a directory\n", path);
+    return 1;
+  }
+
+  errno = 0;
+
+  auto closedirDeleter = [](DIR *d) {
+    if (d != nullptr) closedir(d);
+  };
+  std::unique_ptr<DIR, decltype(closedirDeleter)> aux_dir{
+      opendir(path), std::move(closedirDeleter)};
+  if (errno) {
+    fprintf(stderr, "Failed to open aux directory %s: %s\n", path,
+            strerror(errno));
+    return 1;
+  }
+
+  // Consider the directory as non-empty if any files/dir other
+  // than . and .. are found.
+  while ((dent = readdir(aux_dir.get())) != NULL && nfiles <= 2) ++nfiles;
+  if (nfiles > 2) {
+    fprintf(stderr, "Aux directory %s is not empty.\n", path);
+    return 1;
+  }
+
+  if (access(path, R_OK | W_OK | X_OK) < 0) {
+    fprintf(stderr,
+            "User does not have access permissions on "
+            "aux directory %s\n",
+            path);
+    return 1;
+  }
+
+  return 0;
+}
+
 int zenfs_tool_mkfs() {
   Status s;
-  DIR *aux_dir;
 
   if (FLAGS_aux_path.empty()) {
     fprintf(stderr, "You need to specify --aux_path\n");
     return 1;
   }
 
-  aux_dir = opendir(FLAGS_aux_path.c_str());
-  if (ENOENT != errno) {
-    fprintf(stderr, "Error: aux path exists\n");
-    closedir(aux_dir);
-    return 1;
-  }
+  if (create_aux_dir(FLAGS_aux_path.c_str())) return 1;
 
   std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(false, true);
   if (!zbd) return 1;
