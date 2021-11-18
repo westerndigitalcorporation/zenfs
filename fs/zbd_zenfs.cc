@@ -50,7 +50,6 @@ Zone::Zone(ZonedBlockDevice *zbd, struct zbd_zone *z)
   lifetime_ = Env::WLTH_NOT_SET;
   used_capacity_ = 0;
   capacity_ = 0;
-  isIOZone_ = false;
   if (!(zbd_zone_full(z) || zbd_zone_offline(z) || zbd_zone_rdonly(z)))
     capacity_ = zbd_zone_capacity(z) - (zbd_zone_wp(z) - zbd_zone_start(z));
 }
@@ -76,13 +75,11 @@ IOStatus Zone::Reset() {
   size_t zone_sz = zbd_->GetZoneSize();
   unsigned int report = 1;
   struct zbd_zone z;
-  bool full;
   int ret;
 
   assert(!IsUsed());
   assert(IsBusy());
 
-  full = IsFull();
   ret = zbd_reset_zones(zbd_->GetWriteFD(), start_, zone_sz);
   if (ret) return IOStatus::IOError("Zone reset failed\n");
 
@@ -98,9 +95,6 @@ IOStatus Zone::Reset() {
 
   wp_ = start_;
   lifetime_ = Env::WLTH_NOT_SET;
-
-  if (isIOZone_ && !full)
-    zbd_->PutActiveIOZoneToken();
 
   return IOStatus::OK();
 }
@@ -119,27 +113,19 @@ IOStatus Zone::Finish() {
   capacity_ = 0;
   wp_ = start_ + zone_sz;
 
-  if (isIOZone_)
-    zbd_->PutActiveIOZoneToken();
-
   return IOStatus::OK();
 }
 
 IOStatus Zone::Close() {
   size_t zone_sz = zbd_->GetZoneSize();
   int fd = zbd_->GetWriteFD();
-  bool full;
   int ret;
 
   assert(IsBusy());
-  full = IsFull();
 
   if (!(IsEmpty() || IsFull())) {
     ret = zbd_close_zones(fd, start_, zone_sz);
     if (ret) return IOStatus::IOError("Zone close failed\n");
-  }
-  if (full) {
-    zbd_->PutActiveIOZoneToken();
   }
 
   return IOStatus::OK();
@@ -317,7 +303,6 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
         Zone *newZone = new Zone(this, z);
         ok = newZone->Acquire();
         assert(ok);
-        newZone->isIOZone_ = true;
         io_zones.push_back(newZone);
         if (zbd_zone_imp_open(z) || zbd_zone_exp_open(z) ||
             zbd_zone_closed(z)) {
@@ -503,12 +488,15 @@ IOStatus ZonedBlockDevice::ResetUnusedIOZones() {
   for (const auto z : io_zones) {
     if (z->Acquire()) {
       if (!(z->IsEmpty() || z->IsUsed())) {
+        bool full = z->IsFull();
         IOStatus s = z->Reset();
         bool ok = z->Release();
         assert(ok);
         (void)ok;
         if (!s.ok())
           return s;
+        if (!full)
+          PutActiveIOZoneToken();
       } else {
         z->Release();
       }
@@ -538,6 +526,7 @@ IOStatus ZonedBlockDevice::ApplyFinishThreshold() {
           Debug(logger_, "Failed finishing zone");
           return s;
         }
+        PutActiveIOZoneToken();
       } else {
         ok = z->Release();
         assert(ok);
@@ -582,6 +571,10 @@ IOStatus ZonedBlockDevice::FinishCheapestIOZone() {
 
   IOStatus s = finish_victim->Finish();
   finish_victim->Release();
+  if (s.ok()) {
+    PutActiveIOZoneToken();
+  }
+
 
   return s;
 }
@@ -599,13 +592,11 @@ Zone *ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime) {
 
   s = ResetUnusedIOZones();
   if (!s.ok()) {
-    PutOpenIOZoneToken();
     return nullptr;
   }
 
   s = ApplyFinishThreshold();
   if (!s.ok()) {
-    PutOpenIOZoneToken();
     return nullptr;
   }
 

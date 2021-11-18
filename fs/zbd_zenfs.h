@@ -43,7 +43,6 @@ class Zone {
   uint64_t wp_;
   Env::WriteLifeTimeHint lifetime_;
   std::atomic<long> used_capacity_;
-  bool isIOZone_;
 
   IOStatus Reset();
   IOStatus Finish();

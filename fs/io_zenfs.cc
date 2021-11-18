@@ -225,10 +225,14 @@ ZoneFile::~ZoneFile() {
 
 void ZoneFile::CloseWR() {
   if (active_zone_) {
+    bool full = active_zone_->IsFull();
     IOStatus status = active_zone_->Close();
     ReleaseActiveZone();
     if (status.ok()) {
       zbd_->PutOpenIOZoneToken();
+      if (full) {
+        zbd_->PutActiveIOZoneToken();
+      }
     }
   }
   open_for_wr_ = false;
@@ -376,7 +380,8 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
       IOStatus status = active_zone_->Close();
       ReleaseActiveZone();
       if (status.ok()) {
-        this->zbd_->PutOpenIOZoneToken();
+        zbd_->PutOpenIOZoneToken();
+        zbd_->PutActiveIOZoneToken();
       }
 
       Zone* zone = zbd_->AllocateIOZone(lifetime_);
