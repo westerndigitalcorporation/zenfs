@@ -1091,7 +1091,7 @@ Status NewZenFS(FileSystem** fs, const std::string& bdevname) {
   ZonedBlockDevice* zbd = new ZonedBlockDevice(bdevname, logger);
   IOStatus zbd_status = zbd->Open(false, true);
   if (!zbd_status.ok()) {
-    Error(logger, "Failed to open zoned block device: %s",
+    Error(logger, "mkfs: Failed to open zoned block device: %s",
           zbd_status.ToString().c_str());
     return Status::IOError(zbd_status.ToString());
   }
