@@ -244,14 +244,15 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   }
 
   if (read_f_ < 0) {
-    return IOStatus::InvalidArgument("Failed to open zoned block device: " +
-                                     ErrorToString(errno));
+    return IOStatus::InvalidArgument(
+        "Failed to open zoned block device for read: " + ErrorToString(errno));
   }
 
   read_direct_f_ = zbd_open(filename_.c_str(), O_RDONLY | O_DIRECT, &info);
   if (read_direct_f_ < 0) {
-    return IOStatus::InvalidArgument("Failed to open zoned block device: " +
-                                     ErrorToString(errno));
+    return IOStatus::InvalidArgument(
+        "Failed to open zoned block device for direct read: " +
+        ErrorToString(errno));
   }
 
   if (readonly) {
@@ -259,8 +260,9 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   } else {
     write_f_ = zbd_open(filename_.c_str(), O_WRONLY | O_DIRECT, &info);
     if (write_f_ < 0) {
-      return IOStatus::InvalidArgument("Failed to open zoned block device: " +
-                                       ErrorToString(errno));
+      return IOStatus::InvalidArgument(
+          "Failed to open zoned block device for write: " +
+          ErrorToString(errno));
     }
   }
 
