@@ -76,6 +76,7 @@ class ZoneFile {
   void SetFileSize(uint64_t sz);
 
   uint32_t GetBlockSize() { return zbd_->GetBlockSize(); }
+  ZonedBlockDevice* GetZbd() { return zbd_; }
   std::vector<ZoneExtent*> GetExtents() { return extents_; }
   Env::WriteLifeTimeHint GetWriteLifeTimeHint() { return lifetime_; }
 
