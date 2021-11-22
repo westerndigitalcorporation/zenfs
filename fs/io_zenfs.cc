@@ -220,18 +220,25 @@ ZoneFile::~ZoneFile() {
     zone->used_capacity_ -= (*e)->length_;
     delete *e;
   }
-  CloseWR();
+  IOStatus s = CloseWR();
+  if (!s.ok()) {
+    abort();
+  }
 }
 
-void ZoneFile::CloseWR() {
+IOStatus ZoneFile::CloseWR() {
+  IOStatus s = IOStatus::OK();
+
   if (active_zone_) {
-    IOStatus status = active_zone_->CloseWR();
+    s = active_zone_->CloseWR();
     ReleaseActiveZone();
-    if (status.ok()) {
+    if (s.ok()) {
       zbd_->NotifyIOZoneClosed();
     }
   }
   open_for_wr_ = false;
+
+  return s;
 }
 
 void ZoneFile::OpenWR() { open_for_wr_ = true; }
@@ -356,14 +363,20 @@ void ZoneFile::PushExtent() {
 IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
   uint32_t left = data_size;
   uint32_t wr_size, offset = 0;
-  IOStatus s;
+  IOStatus s = IOStatus::OK();
 
   if (!active_zone_) {
-    Zone* zone = zbd_->AllocateZone(lifetime_);
+    Zone* zone = nullptr;
+    s = zbd_->AllocateZone(lifetime_, &zone);
+    if (!s.ok()) {
+      return s;
+    }
+
     if (!zone) {
       return IOStatus::NoSpace(
           "Out of space: Zone allocation failure while setting active zone");
     }
+
     SetActiveZone(zone);
     extent_start_ = active_zone_->wp_;
     extent_filepos_ = fileSize;
@@ -373,18 +386,26 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
     if (active_zone_->capacity_ == 0) {
       PushExtent();
 
-      IOStatus status = active_zone_->CloseWR();
+      s = active_zone_->CloseWR();
+      if (!s.ok()) {
+        return s;
+      }
       ReleaseActiveZone();
-      if (status.ok()) {
-        zbd_->NotifyIOZoneClosed();
+      zbd_->NotifyIOZoneClosed();
+
+      Zone* zone = nullptr;
+      s = zbd_->AllocateZone(lifetime_, &zone);
+
+      if (!s.ok()) {
+        return s;
       }
 
-      Zone* zone = zbd_->AllocateZone(lifetime_);
       if (!zone) {
         return IOStatus::NoSpace(
             "Out of space: Zone allocation failure while replacing active "
             "zone");
       }
+
       SetActiveZone(zone);
 
       extent_start_ = active_zone_->wp_;
@@ -403,7 +424,7 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
   }
 
   fileSize -= (data_size - valid_size);
-  return IOStatus::OK();
+  return s;
 }
 
 IOStatus ZoneFile::SetWriteLifeTimeHint(Env::WriteLifeTimeHint lifetime) {
@@ -451,9 +472,13 @@ ZonedWritableFile::ZonedWritableFile(ZonedBlockDevice* zbd, bool _buffered,
 }
 
 ZonedWritableFile::~ZonedWritableFile() {
-  zoneFile_->CloseWR();
+  IOStatus s = zoneFile_->CloseWR();
   if (buffered) free(buffer);
-};
+
+  if (!s.ok()) {
+    abort();
+  }
+}
 
 ZonedWritableFile::MetadataWriter::~MetadataWriter() {}
 
@@ -500,9 +525,7 @@ IOStatus ZonedWritableFile::RangeSync(uint64_t offset, uint64_t nbytes,
 IOStatus ZonedWritableFile::Close(const IOOptions& options,
                                   IODebugContext* dbg) {
   Fsync(options, dbg);
-  zoneFile_->CloseWR();
-
-  return IOStatus::OK();
+  return zoneFile_->CloseWR();
 }
 
 IOStatus ZonedWritableFile::FlushBuffer() {

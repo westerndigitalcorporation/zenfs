@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "rocksdb/file_system.h"
+#include "rocksdb/io_status.h"
 #include "zbd_zenfs.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -62,7 +63,7 @@ class ZoneFile {
   virtual ~ZoneFile();
 
   void OpenWR();
-  void CloseWR();
+  IOStatus CloseWR();
   bool IsOpenForWR();
 
   IOStatus Append(void* data, int data_size, int valid_size);
