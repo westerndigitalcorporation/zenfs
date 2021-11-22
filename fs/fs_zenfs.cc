@@ -15,6 +15,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -38,7 +39,7 @@ Status Superblock::DecodeFrom(Slice* input) {
   memcpy(&uuid_, input->data(), sizeof(uuid_));
   input->remove_prefix(sizeof(uuid_));
   GetFixed32(input, &sequence_);
-  GetFixed32(input, &version_);
+  GetFixed32(input, &superblock_version_);
   GetFixed32(input, &flags_);
   GetFixed32(input, &block_size_);
   GetFixed32(input, &zone_size_);
@@ -46,13 +47,15 @@ Status Superblock::DecodeFrom(Slice* input) {
   GetFixed32(input, &finish_treshold_);
   memcpy(&aux_fs_path_, input->data(), sizeof(aux_fs_path_));
   input->remove_prefix(sizeof(aux_fs_path_));
+  memcpy(&zenfs_version_, input->data(), sizeof(zenfs_version_));
+  input->remove_prefix(sizeof(zenfs_version_));
   memcpy(&reserved_, input->data(), sizeof(reserved_));
   input->remove_prefix(sizeof(reserved_));
   assert(input->size() == 0);
 
   if (magic_ != MAGIC)
     return Status::Corruption("ZenFS Superblock", "Error: Magic missmatch");
-  if (version_ != CURRENT_VERSION)
+  if (superblock_version_ != CURRENT_SUPERBLOCK_VERSION)
     return Status::Corruption("ZenFS Superblock", "Error: Version missmatch");
 
   return Status::OK();
@@ -64,15 +67,45 @@ void Superblock::EncodeTo(std::string* output) {
   PutFixed32(output, magic_);
   output->append(uuid_, sizeof(uuid_));
   PutFixed32(output, sequence_);
-  PutFixed32(output, version_);
+  PutFixed32(output, superblock_version_);
   PutFixed32(output, flags_);
   PutFixed32(output, block_size_);
   PutFixed32(output, zone_size_);
   PutFixed32(output, nr_zones_);
   PutFixed32(output, finish_treshold_);
   output->append(aux_fs_path_, sizeof(aux_fs_path_));
+  output->append(zenfs_version_, sizeof(zenfs_version_));
   output->append(reserved_, sizeof(reserved_));
   assert(output->length() == ENCODED_SIZE);
+}
+
+void Superblock::GetReport(std::string* reportString) {
+  reportString->append("Magic:\t\t\t\t");
+  PutFixed32(reportString, magic_);
+  reportString->append("\nUUID:\t\t\t\t");
+  reportString->append(uuid_);
+  reportString->append("\nSequence Number:\t\t");
+  reportString->append(std::to_string(sequence_));
+  reportString->append("\nSuperblock Version:\t\t");
+  reportString->append(std::to_string(superblock_version_));
+  reportString->append("\nFlags [Decimal]:\t\t");
+  reportString->append(std::to_string(flags_));
+  reportString->append("\nBlock Size [Bytes]:\t\t");
+  reportString->append(std::to_string(block_size_));
+  reportString->append("\nZone Size [Blocks]:\t\t");
+  reportString->append(std::to_string(zone_size_));
+  reportString->append("\nNumber of Zones:\t\t");
+  reportString->append(std::to_string(nr_zones_));
+  reportString->append("\nFinish Threshold [%]:\t\t");
+  reportString->append(std::to_string(finish_treshold_));
+  reportString->append("\nAuxiliary FS Path:\t\t");
+  reportString->append(aux_fs_path_);
+  reportString->append("\nZenFS Version:\t\t\t");
+  std::string zenfs_version = zenfs_version_;
+  if (zenfs_version.length() == 0) {
+    zenfs_version = "Not Available";
+  }
+  reportString->append(zenfs_version);
 }
 
 Status Superblock::CompatibleWith(ZonedBlockDevice* zbd) {

@@ -47,6 +47,14 @@ Restore files from a backup into ZenFS file system.
 .B dump
 Dump ZenFS metadata in JSON format.
 
+.TP
+.B fs-info
+Prints the contents of the current ZenFS superblock to stdout.
+.br
+The ZenFS version is set to "Not Available" if the superblock was created with a ZenFS version prior to the one that introduces this command.
+.br
+Otherwise the ZenFS version contains the 'git describe' version string from when it was build.
+
 .SH OPTIONS
 
 .TP
@@ -90,6 +98,10 @@ Restore zenfs filesystem from a backup.
 .TP
 .B zenfs dump --zbd=nvme0n1
 Dump ZenFS filesystem metadata in JSON format.
+
+.TP
+.B zenfs fs-info --zbd=nvme0n1
+Prints the contents of the current ZenFS superblock.
 
 .SH AUTHOR
 .TP
