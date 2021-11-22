@@ -18,6 +18,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -482,15 +483,17 @@ void ZonedBlockDevice::ResetUnusedIOZones() {
   }
 }
 
-Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
+IOStatus ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime,
+                                        Zone **out_zone) {
   Zone *allocated_zone = nullptr;
   Zone *finish_victim = nullptr;
   unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
   int new_zone = 0;
-  Status s;
+  IOStatus s;
   bool ok = false;
   (void)ok;
 
+  *out_zone = nullptr;
   io_zones_mtx.lock();
 
   /* Make sure we are below the zone open limit */
@@ -519,6 +522,7 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
       s = z->Reset();
       if (!s.ok()) {
         Debug(logger_, "Failed resetting zone !");
+        return s;
       }
 
       ok = z->Release();
@@ -532,6 +536,7 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
       s = z->Finish();
       if (!s.ok()) {
         Debug(logger_, "Failed finishing zone");
+        return s;
       }
       active_io_zones_--;
     }
@@ -590,6 +595,7 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
       s = finish_victim->Finish();
       if (!s.ok()) {
         Debug(logger_, "Failed finishing zone");
+        return s;
       }
       active_io_zones_--;
     }
@@ -635,7 +641,8 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
   io_zones_mtx.unlock();
   LogZoneStats();
 
-  return allocated_zone;
+  *out_zone = allocated_zone;
+  return IOStatus::OK();
 }
 
 std::string ZonedBlockDevice::GetFilename() { return filename_; }
