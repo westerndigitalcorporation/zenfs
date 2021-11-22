@@ -90,6 +90,8 @@ class ZonedBlockDevice {
   std::atomic<long> active_io_zones_;
   std::atomic<long> open_io_zones_;
   std::condition_variable zone_resources_;
+  std::mutex zone_deferred_status_mutex_;
+  IOStatus zone_deferred_status_;
 
   unsigned int max_nr_active_io_zones_;
   unsigned int max_nr_open_io_zones_;
@@ -138,8 +140,11 @@ class ZonedBlockDevice {
 
   std::mutex zone_resources_mtx_; /* Protects active/open io zones */
 
+  void SetZoneDeferredStatus(IOStatus status);
+
  private:
   std::string ErrorToString(int err);
+  IOStatus GetZoneDeferredStatus();
 };
 
 }  // namespace ROCKSDB_NAMESPACE

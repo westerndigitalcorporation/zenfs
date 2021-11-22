@@ -222,7 +222,7 @@ ZoneFile::~ZoneFile() {
   }
   IOStatus s = CloseWR();
   if (!s.ok()) {
-    abort();
+    zbd_->SetZoneDeferredStatus(s);
   }
 }
 
@@ -476,7 +476,7 @@ ZonedWritableFile::~ZonedWritableFile() {
   if (buffered) free(buffer);
 
   if (!s.ok()) {
-    abort();
+    zoneFile_->GetZbd()->SetZoneDeferredStatus(s);
   }
 }
 

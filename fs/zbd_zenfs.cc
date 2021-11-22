@@ -20,12 +20,14 @@
 
 #include <cstdlib>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "rocksdb/env.h"
+#include "rocksdb/io_status.h"
 
 #define KB (1024)
 #define MB (1024 * KB)
@@ -175,7 +177,9 @@ Zone *ZonedBlockDevice::GetIOZone(uint64_t offset) {
 
 ZonedBlockDevice::ZonedBlockDevice(std::string bdevname,
                                    std::shared_ptr<Logger> logger)
-    : filename_("/dev/" + bdevname), logger_(logger) {
+    : filename_("/dev/" + bdevname),
+      logger_(logger),
+      zone_deferred_status_(IOStatus::OK()) {
   Info(logger_, "New Zoned Block Device: %s", filename_.c_str());
 };
 
@@ -494,6 +498,13 @@ IOStatus ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime,
   (void)ok;
 
   *out_zone = nullptr;
+
+  // Check if a deferred IO error was set
+  s = GetZoneDeferredStatus();
+  if (!s.ok()) {
+    return s;
+  }
+
   io_zones_mtx.lock();
 
   /* Make sure we are below the zone open limit */
@@ -672,6 +683,18 @@ void ZonedBlockDevice::EncodeJson(std::ostream &json_stream) {
   json_stream << ",\"io\":";
   EncodeJsonZone(json_stream, io_zones);
   json_stream << "}";
+}
+
+IOStatus ZonedBlockDevice::GetZoneDeferredStatus() {
+  std::lock_guard<std::mutex> lock(zone_deferred_status_mutex_);
+  return zone_deferred_status_;
+}
+
+void ZonedBlockDevice::SetZoneDeferredStatus(IOStatus status) {
+  std::lock_guard<std::mutex> lk(zone_deferred_status_mutex_);
+  if (!zone_deferred_status_.ok()) {
+    zone_deferred_status_ = status;
+  }
 }
 
 }  // namespace ROCKSDB_NAMESPACE
