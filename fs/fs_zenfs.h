@@ -13,6 +13,7 @@
 #include "rocksdb/env.h"
 #include "rocksdb/file_system.h"
 #include "rocksdb/status.h"
+#include "version.h"
 #include "zbd_zenfs.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -26,19 +27,20 @@ class Superblock {
   uint32_t magic_ = 0;
   char uuid_[37] = {0};
   uint32_t sequence_ = 0;
-  uint32_t version_ = 0;
+  uint32_t superblock_version_ = 0;
   uint32_t flags_ = 0;
   uint32_t block_size_ = 0; /* in bytes */
   uint32_t zone_size_ = 0;  /* in blocks */
   uint32_t nr_zones_ = 0;
   char aux_fs_path_[256] = {0};
   uint32_t finish_treshold_ = 0;
-  char reserved_[187] = {0};
+  char zenfs_version_[64]{0};
+  char reserved_[123] = {0};
 
  public:
   const uint32_t MAGIC = 0x5a454e46; /* ZENF */
   const uint32_t ENCODED_SIZE = 512;
-  const uint32_t CURRENT_VERSION = 1;
+  const uint32_t CURRENT_SUPERBLOCK_VERSION = 1;
   const uint32_t DEFAULT_FLAGS = 0;
 
   Superblock() {}
@@ -53,7 +55,7 @@ class Superblock {
                  sizeof(uuid_) - 1); /* make sure uuid is nullterminated */
     memcpy((void*)uuid_, uuid.c_str(), uuid_len);
     magic_ = MAGIC;
-    version_ = CURRENT_VERSION;
+    superblock_version_ = CURRENT_SUPERBLOCK_VERSION;
     flags_ = DEFAULT_FLAGS;
     finish_treshold_ = finish_threshold;
 
@@ -62,11 +64,16 @@ class Superblock {
     nr_zones_ = zbd->GetNrZones();
 
     strncpy(aux_fs_path_, aux_fs_path.c_str(), sizeof(aux_fs_path_) - 1);
+
+    std::string zenfs_version = ZENFS_VERSION;
+    strncpy(zenfs_version_, zenfs_version.c_str(), sizeof(zenfs_version_) - 1);
   }
 
   Status DecodeFrom(Slice* input);
   void EncodeTo(std::string* output);
   Status CompatibleWith(ZonedBlockDevice* zbd);
+
+  void GetReport(std::string* reportString);
 
   uint32_t GetSeq() { return sequence_; }
   std::string GetAuxFsPath() { return std::string(aux_fs_path_); }
@@ -188,6 +195,8 @@ class ZenFS : public FileSystemWrapper {
   }
 
   void EncodeJson(std::ostream& json_stream);
+
+  void ReportSuperblock(std::string* report) { superblock_->GetReport(report); }
 
   virtual IOStatus NewSequentialFile(const std::string& fname,
                                      const FileOptions& file_opts,

@@ -539,6 +539,24 @@ int zenfs_tool_dump() {
   return 0;
 }
 
+int zenfs_tool_fsinfo() {
+  Status s;
+  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(true, false);
+  if (!zbd) return 1;
+
+  std::unique_ptr<ZenFS> zenFS;
+  s = zenfs_mount(zbd, &zenFS, true);
+  if (!s.ok()) {
+    fprintf(stderr, "Failed to mount filesystem, error: %s\n",
+            s.ToString().c_str());
+    return 1;
+  }
+  std::string superblock_report;
+  zenFS->ReportSuperblock(&superblock_report);
+  fprintf(stdout, "%s\n", superblock_report.c_str());
+  return 0;
+}
+
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char **argv) {
@@ -570,6 +588,8 @@ int main(int argc, char **argv) {
     return ROCKSDB_NAMESPACE::zenfs_tool_restore();
   } else if (subcmd == "dump") {
     return ROCKSDB_NAMESPACE::zenfs_tool_dump();
+  } else if (subcmd == "fs-info") {
+    return ROCKSDB_NAMESPACE::zenfs_tool_fsinfo();
   } else {
     fprintf(stderr, "Subcommand not recognized: %s\n", subcmd.c_str());
     return 1;
