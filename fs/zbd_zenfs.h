@@ -91,7 +91,9 @@ class ZonedBlockDevice {
 
   std::atomic<long> active_io_zones_;
   std::atomic<long> open_io_zones_;
-  std::mutex zone_resources_mtx_; /* Protects active/open io zones */
+  /* Protects zone_resuorces_  condition variable, used
+     for notifying changes in open_io_zones_ */
+  std::mutex zone_resources_mtx_;
   std::condition_variable zone_resources_;
   std::mutex zone_deferred_status_mutex_;
   IOStatus zone_deferred_status_;
