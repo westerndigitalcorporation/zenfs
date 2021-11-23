@@ -28,4 +28,5 @@ jobs:
           path: harness/rocksdb-context/rocksdb/plugin/zenfs
       - name: Run smoke tests
         run: cd harness && make NO_VAGRANT=1 results/zenfs-smoke.xml 
-      
+      - name: Remove docker images
+        run: docker image prune --force
