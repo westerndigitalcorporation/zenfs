@@ -360,6 +360,7 @@ void ZonedBlockDevice::NotifyIOZoneFull() {
 }
 
 void ZonedBlockDevice::NotifyIOZoneClosed() {
+  const std::lock_guard<std::mutex> lock(zone_resources_mtx_);
   open_io_zones_--;
   zone_resources_.notify_one();
 }
