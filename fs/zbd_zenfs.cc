@@ -489,7 +489,6 @@ IOStatus ZonedBlockDevice::AllocateMetaZone(Zone **out_meta_zone) {
 }
 
 Status ZonedBlockDevice::ResetUnusedIOZones() {
-  const std::lock_guard<std::mutex> lock(zone_resources_mtx_);
   /* Reset any unused zones */
   for (const auto z : io_zones) {
     if (z->Acquire()) {
