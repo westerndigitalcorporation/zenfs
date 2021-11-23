@@ -102,6 +102,7 @@ class ZoneFile {
  private:
   void ReleaseActiveZone();
   void SetActiveZone(Zone* zone);
+  IOStatus CloseActiveZone();
 };
 
 class ZonedWritableFile : public FSWritableFile {
