@@ -91,6 +91,7 @@ class ZonedBlockDevice {
 
   std::atomic<long> active_io_zones_;
   std::atomic<long> open_io_zones_;
+  std::mutex zone_resources_mtx_; /* Protects active/open io zones */
   std::condition_variable zone_resources_;
   std::mutex zone_deferred_status_mutex_;
   IOStatus zone_deferred_status_;
@@ -139,8 +140,6 @@ class ZonedBlockDevice {
   void NotifyIOZoneClosed();
 
   void EncodeJson(std::ostream &json_stream);
-
-  std::mutex zone_resources_mtx_; /* Protects active/open io zones */
 
   void SetZoneDeferredStatus(IOStatus status);
 
