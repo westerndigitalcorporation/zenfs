@@ -472,6 +472,9 @@ ZonedWritableFile::ZonedWritableFile(ZonedBlockDevice* zbd, bool _buffered,
 }
 
 ZonedWritableFile::~ZonedWritableFile() {
+  IOOptions iopts;
+
+  Fsync(iopts, nullptr);
   IOStatus s = zoneFile_->CloseWR();
   if (buffered) free(buffer);
 
