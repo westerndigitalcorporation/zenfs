@@ -64,8 +64,6 @@ bool Zone::IsEmpty() { return (wp_ == start_); }
 uint64_t Zone::GetZoneNr() { return start_ / zbd_->GetZoneSize(); }
 
 IOStatus Zone::CloseWR() {
-  const std::lock_guard<std::mutex> lock(zbd_->zone_resources_mtx_);
-
   assert(IsBusy());
 
   IOStatus status = Close();
@@ -355,6 +353,7 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
 }
 
 void ZonedBlockDevice::NotifyIOZoneFull() {
+  const std::lock_guard<std::mutex> lock(zone_resources_mtx_);
   active_io_zones_--;
   zone_resources_.notify_one();
 }
