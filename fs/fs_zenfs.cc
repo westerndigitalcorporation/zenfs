@@ -417,6 +417,8 @@ IOStatus ZenFS::DeleteFile(std::string fname) {
     } else {
       zoneFile.reset();
     }
+  } else {
+    s = IOStatus::NotFound("ZenFS::DeleteFile(): File not found");
   }
   files_mtx_.unlock();
   return s;
