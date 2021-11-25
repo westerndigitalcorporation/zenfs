@@ -471,13 +471,24 @@ IOStatus ZenFS::ReuseWritableFile(const std::string& fname,
                                   const FileOptions& file_opts,
                                   std::unique_ptr<FSWritableFile>* result,
                                   IODebugContext* dbg) {
+  IOStatus s;
   Debug(logger_, "Reuse writable file: %s old name: %s\n", fname.c_str(),
         old_fname.c_str());
 
-  if (GetFile(fname) == nullptr)
+  if (GetFile(old_fname) == nullptr)
     return IOStatus::NotFound("Old file does not exist");
 
-  return NewWritableFile(fname, file_opts, result, dbg);
+  /*
+   * Delete the old file as it cannot be written from start of file
+   * and create a new file with fname
+   */
+  s = DeleteFile(old_fname);
+  if (!s.ok()) {
+    Error(logger_, "Failed to delete file %s\n", old_fname.c_str());
+    return s;
+  }
+
+  return OpenWritableFile(fname, file_opts, result, dbg, false);
 }
 
 IOStatus ZenFS::FileExists(const std::string& fname, const IOOptions& options,
