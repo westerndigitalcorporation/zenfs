@@ -23,6 +23,7 @@
 #include <utility>
 #include <vector>
 
+#include "metrics.h"
 #include "rocksdb/env.h"
 #include "rocksdb/io_status.h"
 
@@ -94,12 +95,16 @@ class ZonedBlockDevice {
   unsigned int max_nr_active_io_zones_;
   unsigned int max_nr_open_io_zones_;
 
+  std::shared_ptr<ZenFSMetrics> metrics_;
+
   void EncodeJsonZone(std::ostream &json_stream,
                       const std::vector<Zone *> zones);
 
  public:
   explicit ZonedBlockDevice(std::string bdevname,
-                            std::shared_ptr<Logger> logger);
+                            std::shared_ptr<Logger> logger,
+                            std::shared_ptr<ZenFSMetrics> metrics =
+                                std::make_shared<NoZenFSMetrics>());
   virtual ~ZonedBlockDevice();
 
   IOStatus Open(bool readonly, bool exclusive);
@@ -137,6 +142,8 @@ class ZonedBlockDevice {
   void EncodeJson(std::ostream &json_stream);
 
   std::mutex zone_resources_mtx_; /* Protects active/open io zones */
+
+  std::shared_ptr<ZenFSMetrics> GetMetrics() { return metrics_; }
 
  private:
   std::string ErrorToString(int err);

@@ -100,6 +100,7 @@ class ZoneFile {
  private:
   void ReleaseActiveZone();
   void SetActiveZone(Zone* zone);
+  std::shared_ptr<ZenFSMetrics> GetZBDMetrics() { return zbd_->GetMetrics(); }
 };
 
 class ZonedWritableFile : public FSWritableFile {

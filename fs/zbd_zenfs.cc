@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -173,10 +174,11 @@ Zone *ZonedBlockDevice::GetIOZone(uint64_t offset) {
 }
 
 ZonedBlockDevice::ZonedBlockDevice(std::string bdevname,
-                                   std::shared_ptr<Logger> logger)
-    : filename_("/dev/" + bdevname), logger_(logger) {
+                                   std::shared_ptr<Logger> logger,
+                                   std::shared_ptr<ZenFSMetrics> metrics)
+    : filename_("/dev/" + bdevname), logger_(logger), metrics_(metrics) {
   Info(logger_, "New Zoned Block Device: %s", filename_.c_str());
-};
+}
 
 std::string ZonedBlockDevice::ErrorToString(int err) {
   char *err_str = strerror(err);
@@ -448,6 +450,10 @@ unsigned int GetLifeTimeDiff(Env::WriteLifeTimeHint zone_lifetime,
 }
 
 Zone *ZonedBlockDevice::AllocateMetaZone() {
+  ZenFSMetricsLatencyGuard guard(metrics_, ZENFS_META_ALLOC_LATENCY,
+                                 Env::Default());
+  metrics_->ReportQPS(ZENFS_META_ALLOC_QPS, 1);
+
   for (const auto z : meta_zones) {
     /* If the zone is not used, reset and use it */
     if (z->Acquire()) {
@@ -490,6 +496,10 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
   Status s;
   bool ok = false;
   (void)ok;
+
+  ZenFSMetricsLatencyGuard guard(metrics_, ZENFS_IO_ALLOC_NON_WAL_LATENCY,
+                                 Env::Default());
+  metrics_->ReportQPS(ZENFS_IO_ALLOC_QPS, 1);
 
   io_zones_mtx.lock();
 
@@ -634,6 +644,9 @@ Zone *ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime) {
 
   io_zones_mtx.unlock();
   LogZoneStats();
+
+  metrics_->ReportGeneral(ZENFS_OPEN_ZONES, open_io_zones_);
+  metrics_->ReportGeneral(ZENFS_ACTIVE_ZONES, active_io_zones_);
 
   return allocated_zone;
 }

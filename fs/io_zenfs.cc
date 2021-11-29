@@ -252,6 +252,10 @@ ZoneExtent* ZoneFile::GetExtent(uint64_t file_offset, uint64_t* dev_offset) {
 
 IOStatus ZoneFile::PositionedRead(uint64_t offset, size_t n, Slice* result,
                                   char* scratch, bool direct) {
+  ZenFSMetricsLatencyGuard guard(zbd_->GetMetrics(), ZENFS_READ_LATENCY,
+                                 Env::Default());
+  zbd_->GetMetrics()->ReportQPS(ZENFS_READ_QPS, 1);
+
   int f = zbd_->GetReadFD();
   int f_direct = zbd_->GetReadDirectFD();
   char* ptr;

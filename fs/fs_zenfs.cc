@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "metrics_sample.h"
 #include "rocksdb/utilities/object_registry.h"
 #include "util/coding.h"
 #include "util/crc32c.h"
@@ -281,6 +282,10 @@ IOStatus ZenFS::RollMetaZoneLocked() {
   Zone* new_meta_zone;
   IOStatus s;
 
+  ZenFSMetricsLatencyGuard guard(zbd_->GetMetrics(), ZENFS_ROLL_LATENCY,
+                                 Env::Default());
+  zbd_->GetMetrics()->ReportQPS(ZENFS_ROLL_QPS, 1);
+
   new_meta_zone = zbd_->AllocateMetaZone();
   if (!new_meta_zone) {
     assert(false);  // TMP
@@ -362,6 +367,9 @@ IOStatus ZenFS::SyncFileMetadata(std::shared_ptr<ZoneFile> zoneFile) {
   std::string output;
 
   IOStatus s;
+
+  ZenFSMetricsLatencyGuard guard(zbd_->GetMetrics(),
+                                 ZENFS_METADATA_SYNC_LATENCY, Env::Default());
 
   files_mtx_.lock();
 
@@ -1075,7 +1083,8 @@ static std::string GetLogFilename(std::string bdev) {
 }
 #endif
 
-Status NewZenFS(FileSystem** fs, const std::string& bdevname) {
+Status NewZenFS(FileSystem** fs, const std::string& bdevname,
+                std::shared_ptr<ZenFSMetrics> metrics) {
   std::shared_ptr<Logger> logger;
   Status s;
 
@@ -1088,7 +1097,7 @@ Status NewZenFS(FileSystem** fs, const std::string& bdevname) {
   }
 #endif
 
-  ZonedBlockDevice* zbd = new ZonedBlockDevice(bdevname, logger);
+  ZonedBlockDevice* zbd = new ZonedBlockDevice(bdevname, logger, metrics);
   IOStatus zbd_status = zbd->Open(false, true);
   if (!zbd_status.ok()) {
     Error(logger, "Failed to open zoned block device: %s",
@@ -1200,7 +1209,8 @@ FactoryFunc<FileSystem> zenfs_filesystem_reg =
 #include "rocksdb/env.h"
 
 namespace ROCKSDB_NAMESPACE {
-Status NewZenFS(FileSystem** /*fs*/, const std::string& /*bdevname*/) {
+Status NewZenFS(FileSystem** /*fs*/, const std::string& /*bdevname*/,
+                ZenFSMetrics* /*metrics*/) {
   return Status::NotSupported("Not built with ZenFS support\n");
 }
 std::map<std::string, std::string> ListZenFileSystems() {
