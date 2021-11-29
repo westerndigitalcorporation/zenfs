@@ -281,6 +281,10 @@ IOStatus ZenFS::RollMetaZoneLocked() {
   Zone *new_meta_zone, *old_meta_zone;
   IOStatus s;
 
+  ZenFSMetricsLatencyGuard guard(zbd_->GetMetrics(), 
+    ZENFS_ROLL_LATENCY, Env::Default());
+  zbd_->GetMetrics()->ReportQPS(ZENFS_ROLL_QPS, 1);
+
   new_meta_zone = zbd_->AllocateMetaZone();
   if (!new_meta_zone) {
     assert(false);  // TMP
@@ -362,6 +366,9 @@ IOStatus ZenFS::SyncFileMetadata(ZoneFile* zoneFile) {
   std::string output;
 
   IOStatus s;
+
+  ZenFSMetricsLatencyGuard guard(zbd_->GetMetrics(), 
+    ZENFS_METADATA_SYNC_LATENCY, Env::Default());
 
   files_mtx_.lock();
 
@@ -1081,6 +1088,8 @@ Status NewZenFS(FileSystem** fs, const std::string& bdevname) {
           zbd_status.ToString().c_str());
     return Status::IOError(zbd_status.ToString());
   }
+  
+  zbd->SetMetrics(std::make_shared<NoZenFSMetrics>());
 
   ZenFS* zenFS = new ZenFS(zbd, FileSystem::Default(), logger);
   s = zenFS->Mount(false);
