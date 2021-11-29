@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "metrics_sample.h"
 #include "rocksdb/utilities/object_registry.h"
 #include "util/coding.h"
 #include "util/crc32c.h"
@@ -280,6 +281,10 @@ IOStatus ZenFS::RollMetaZoneLocked() {
   Zone* new_meta_zone = nullptr;
   IOStatus s;
 
+  ZenFSMetricsLatencyGuard guard(zbd_->GetMetrics(), ZENFS_ROLL_LATENCY,
+                                 Env::Default());
+  zbd_->GetMetrics()->ReportQPS(ZENFS_ROLL_QPS, 1);
+
   IOStatus status = zbd_->AllocateMetaZone(&new_meta_zone);
   if (!status.ok()) return status;
 
@@ -357,9 +362,9 @@ IOStatus ZenFS::PersistRecord(std::string record) {
 IOStatus ZenFS::SyncFileMetadata(std::shared_ptr<ZoneFile> zoneFile) {
   std::string fileRecord;
   std::string output;
-
   IOStatus s;
-
+  ZenFSMetricsLatencyGuard guard(zbd_->GetMetrics(),
+                                 ZENFS_METADATA_SYNC_LATENCY, Env::Default());
   std::lock_guard<std::mutex> lock(files_mtx_);
   zoneFile->SetFileModificationTime(time(0));
   PutFixed32(&output, kFileUpdate);
@@ -1083,7 +1088,8 @@ static std::string GetLogFilename(std::string bdev) {
 }
 #endif
 
-Status NewZenFS(FileSystem** fs, const std::string& bdevname) {
+Status NewZenFS(FileSystem** fs, const std::string& bdevname,
+                std::shared_ptr<ZenFSMetrics> metrics) {
   std::shared_ptr<Logger> logger;
   Status s;
 
@@ -1096,7 +1102,7 @@ Status NewZenFS(FileSystem** fs, const std::string& bdevname) {
   }
 #endif
 
-  ZonedBlockDevice* zbd = new ZonedBlockDevice(bdevname, logger);
+  ZonedBlockDevice* zbd = new ZonedBlockDevice(bdevname, logger, metrics);
   IOStatus zbd_status = zbd->Open(false, true);
   if (!zbd_status.ok()) {
     Error(logger, "mkfs: Failed to open zoned block device: %s",
@@ -1208,7 +1214,8 @@ FactoryFunc<FileSystem> zenfs_filesystem_reg =
 #include "rocksdb/env.h"
 
 namespace ROCKSDB_NAMESPACE {
-Status NewZenFS(FileSystem** /*fs*/, const std::string& /*bdevname*/) {
+Status NewZenFS(FileSystem** /*fs*/, const std::string& /*bdevname*/,
+                ZenFSMetrics* /*metrics*/) {
   return Status::NotSupported("Not built with ZenFS support\n");
 }
 std::map<std::string, std::string> ListZenFileSystems() {
