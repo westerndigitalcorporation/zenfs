@@ -1,0 +1,31 @@
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 21 * * fri'
+name: MTR Tests
+jobs:
+  mtr-tests:
+    runs-on: self-hosted
+    timeout-minutes: 1440
+    steps:
+      - name: Clean
+        run: rm -rf ${GITHUB_WORKSPACE}/*
+      - name: Checkout build scripts
+        run: git clone ~/harness.git
+      - name: Checkout zbdbench
+        run: git clone ~/zbdbench.git harness/rocksdb-context/zbdbench
+      - name: Checkout rocksdb
+        uses: actions/checkout@v2
+        with:
+          repository: facebook/rocksdb
+          ref: v6.25.3
+          path: harness/rocksdb-context/rocksdb
+      - name: Checkout zenfs
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+          path: harness/rocksdb-context/rocksdb/plugin/zenfs
+      - name: Run MTR tests
+        run: cd harness && make NO_VAGRANT=1 results/zenfs-mtr.xml 
+      - name: Remove docker images
+        run: docker image prune --force
