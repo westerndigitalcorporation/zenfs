@@ -82,7 +82,6 @@ class ZonedBlockDevice {
   uint64_t zone_sz_;
   uint32_t nr_zones_;
   std::vector<Zone *> io_zones;
-  std::mutex io_zones_mtx;
   std::vector<Zone *> meta_zones;
   int read_f_;
   int read_direct_f_;
@@ -120,7 +119,7 @@ class ZonedBlockDevice {
 
   Zone *GetIOZone(uint64_t offset);
 
-  IOStatus AllocateZone(Env::WriteLifeTimeHint file_lifetime, Zone **out_zone);
+  IOStatus AllocateIOZone(Env::WriteLifeTimeHint file_lifetime, Zone **out_zone);
   IOStatus AllocateMetaZone(Zone **out_meta_zone);
 
   uint64_t GetFreeSpace();
@@ -130,7 +129,7 @@ class ZonedBlockDevice {
   std::string GetFilename();
   uint32_t GetBlockSize();
 
-  Status ResetUnusedIOZones();
+  IOStatus ResetUnusedIOZones();
   void LogZoneStats();
   void LogZoneUsage();
 
@@ -144,8 +143,8 @@ class ZonedBlockDevice {
 
   void SetFinishTreshold(uint32_t threshold) { finish_threshold_ = threshold; }
 
-  void NotifyIOZoneFull();
-  void NotifyIOZoneClosed();
+  void PutOpenIOZoneToken();
+  void PutActiveIOZoneToken();
 
   void EncodeJson(std::ostream &json_stream);
 
@@ -158,6 +157,13 @@ class ZonedBlockDevice {
  private:
   std::string ErrorToString(int err);
   IOStatus GetZoneDeferredStatus();
+  bool GetActiveIOZoneTokenIfAvailable();
+  void WaitForOpenIOZoneToken();
+  IOStatus ApplyFinishThreshold();
+  IOStatus FinishCheapestIOZone();
+  IOStatus GetBestOpenZoneMatch(Env::WriteLifeTimeHint file_lifetime, unsigned int *best_diff_out, Zone **zone_out);
+  IOStatus AllocateEmptyZone(Zone **zone_out);
+
 };
 
 }  // namespace ROCKSDB_NAMESPACE

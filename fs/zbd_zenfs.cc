@@ -65,16 +65,6 @@ bool Zone::IsFull() { return (capacity_ == 0); }
 bool Zone::IsEmpty() { return (wp_ == start_); }
 uint64_t Zone::GetZoneNr() { return start_ / zbd_->GetZoneSize(); }
 
-IOStatus Zone::CloseWR() {
-  assert(IsBusy());
-
-  IOStatus status = Close();
-
-  if (capacity_ == 0) zbd_->NotifyIOZoneFull();
-
-  return status;
-}
-
 void Zone::EncodeJson(std::ostream &json_stream) {
   json_stream << "{";
   json_stream << "\"start\":" << start_ << ",";
@@ -353,18 +343,6 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   return IOStatus::OK();
 }
 
-void ZonedBlockDevice::NotifyIOZoneFull() {
-  const std::lock_guard<std::mutex> lock(zone_resources_mtx_);
-  active_io_zones_--;
-  zone_resources_.notify_one();
-}
-
-void ZonedBlockDevice::NotifyIOZoneClosed() {
-  const std::lock_guard<std::mutex> lock(zone_resources_mtx_);
-  open_io_zones_--;
-  zone_resources_.notify_one();
-}
-
 uint64_t ZonedBlockDevice::GetFreeSpace() {
   uint64_t free = 0;
   for (const auto z : io_zones) {
@@ -394,7 +372,6 @@ void ZonedBlockDevice::LogZoneStats() {
   uint64_t reclaimable_capacity = 0;
   uint64_t reclaimables_max_capacity = 0;
   uint64_t active = 0;
-  io_zones_mtx.lock();
 
   for (const auto z : io_zones) {
     used_capacity += z->used_capacity_;
@@ -417,7 +394,6 @@ void ZonedBlockDevice::LogZoneStats() {
        100 * reclaimable_capacity / reclaimables_max_capacity, active,
        active_io_zones_.load(), open_io_zones_.load());
 
-  io_zones_mtx.unlock();
 }
 
 void ZonedBlockDevice::LogZoneUsage() {
@@ -492,35 +468,217 @@ IOStatus ZonedBlockDevice::AllocateMetaZone(Zone **out_meta_zone) {
   return IOStatus::NoSpace("Out of metadata zones");
 }
 
-Status ZonedBlockDevice::ResetUnusedIOZones() {
-  /* Reset any unused zones */
+IOStatus ZonedBlockDevice::ResetUnusedIOZones() {
   for (const auto z : io_zones) {
     if (z->Acquire()) {
-      if (!z->IsUsed() && !z->IsEmpty()) {
-        if (!z->IsFull()) active_io_zones_--;
-        if (!z->Reset().ok()) Warn(logger_, "Failed reseting zone");
+      if (!(z->IsEmpty() || z->IsUsed())) {
+        bool full = z->IsFull();
+        IOStatus reset_status = z->Reset();
+        IOStatus release_status = z->CheckRelease();
+        if (!reset_status.ok())
+          return reset_status;
+        if (!release_status.ok())
+          return release_status;
+        if (!full)
+          PutActiveIOZoneToken();
+      } else {
+        IOStatus release_status = z->CheckRelease();
+        if (!release_status.ok())
+          return release_status;
       }
-      IOStatus status = z->CheckRelease();
-      if (!status.ok()) return status;
     }
   }
-  return Status::OK();
+  return IOStatus::OK();
 }
 
-IOStatus ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime,
+void ZonedBlockDevice::WaitForOpenIOZoneToken() {
+  /* Wait for an open IO Zone token - after this function returns
+   * the caller is allowed to write to a closed zone. The callee
+   * is responsible for calling a PutOpenIOZoneToken to return the resource
+   */
+  std::unique_lock<std::mutex> lk(zone_resources_mtx_);
+  zone_resources_.wait(lk, [this] {
+    if (open_io_zones_.load() < max_nr_open_io_zones_) {
+      open_io_zones_++;
+      return true;
+    } else {
+      return false;
+    }
+  });
+}
+
+bool ZonedBlockDevice::GetActiveIOZoneTokenIfAvailable() {
+  /* Grap an active IO Zone token if available - after this function returns
+   * the caller is allowed to write to a closed zone. The callee
+   * is responsible for calling a PutActiveIOZoneToken to return the resource
+   */
+  std::unique_lock<std::mutex> lk(zone_resources_mtx_);
+  if (active_io_zones_.load() < max_nr_active_io_zones_) {
+    active_io_zones_++;
+    return true;
+  }
+  return false;
+}
+
+void ZonedBlockDevice::PutOpenIOZoneToken() {
+  std::unique_lock<std::mutex> lk(zone_resources_mtx_);
+  open_io_zones_--;
+  zone_resources_.notify_one();
+}
+
+void ZonedBlockDevice::PutActiveIOZoneToken() {
+  std::unique_lock<std::mutex> lk(zone_resources_mtx_);
+  active_io_zones_--;
+  zone_resources_.notify_one();
+}
+
+IOStatus ZonedBlockDevice::ApplyFinishThreshold() {
+  IOStatus s;
+
+   if (finish_threshold_ == 0)
+    return IOStatus::OK();
+
+  for (const auto z : io_zones) {
+    if (z->Acquire()) {
+      bool within_finish_threshold = z->capacity_ < (z->max_capacity_ * finish_threshold_ / 100);
+      if (!(z->IsEmpty() || z->IsFull()) && within_finish_threshold) {
+        /* If there is less than finish_threshold_% remaining capacity in a
+         * non-open-zone, finish the zone */
+        s = z->Finish();
+        if (!s.ok()) {
+          z->Release();
+          Debug(logger_, "Failed finishing zone");
+          return s;
+        }
+        s = z->CheckRelease();
+        if (!s.ok())
+          return s;
+        PutActiveIOZoneToken();
+      } else {
+        s = z->CheckRelease();
+        if (!s.ok())
+          return s;
+      }
+    }
+  }
+
+  return IOStatus::OK();
+}
+
+IOStatus ZonedBlockDevice::FinishCheapestIOZone() {
+  IOStatus s;
+  Zone *finish_victim = nullptr;
+
+  for (const auto z : io_zones) {
+    if (z->Acquire()) {
+      if (z->IsEmpty() || z->IsFull()) {
+        s = z->CheckRelease();
+        if (!s.ok())
+          return s;
+        continue;
+      }
+      if (finish_victim == nullptr) {
+        finish_victim = z;
+        continue;
+      }
+      if (finish_victim->capacity_ > z->capacity_) {
+        s = finish_victim->CheckRelease();
+        if (!s.ok())
+          return s;
+        finish_victim = z;
+      } else {
+        s = z->CheckRelease();
+        if (!s.ok())
+          return s;
+      }
+    }
+  }
+
+  if (finish_victim == nullptr) {
+    return IOStatus::IOError("Failed to find a zone to finish");
+  }
+
+  s = finish_victim->Finish();
+  IOStatus release_status = finish_victim->CheckRelease();
+
+  if (s.ok()) {
+    PutActiveIOZoneToken();
+  }
+
+  if (!release_status.ok()) {
+    return release_status;
+  }
+
+  return s;
+}
+
+IOStatus ZonedBlockDevice::GetBestOpenZoneMatch(Env::WriteLifeTimeHint file_lifetime,
+                                             unsigned int *best_diff_out, Zone **zone_out) {
+  unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
+  Zone *allocated_zone = nullptr;
+  IOStatus s;
+
+  for (const auto z : io_zones) {
+    if (z->Acquire()) {
+      if ((z->used_capacity_ > 0) && !z->IsFull()) {
+        unsigned int diff = GetLifeTimeDiff(z->lifetime_, file_lifetime);
+        if (diff <= best_diff) {
+          if (allocated_zone != nullptr) {
+            s = allocated_zone->CheckRelease();
+            if (!s.ok())
+              return s;
+          }
+          allocated_zone = z;
+          best_diff = diff;
+        } else {
+          s = z->CheckRelease();
+          if (!s.ok())
+            return s;
+        }
+      } else {
+        s = z->CheckRelease();
+        if (!s.ok())
+           return s;
+      }
+    }
+  }
+
+  *best_diff_out = best_diff;
+  *zone_out = allocated_zone;
+
+  return IOStatus::OK();
+}
+
+IOStatus ZonedBlockDevice::AllocateEmptyZone(Zone **zone_out) {
+  IOStatus s;
+  Zone *allocated_zone = nullptr;
+  for (const auto z : io_zones) {
+    if (z->Acquire()) {
+      if (z->IsEmpty()) {
+        allocated_zone = z;
+        break;
+      } else {
+        s = z->CheckRelease();
+        if (!s.ok())
+          return s;
+      }
+    }
+  }
+  *zone_out = allocated_zone;
+  return IOStatus::OK();
+}
+
+
+
+IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
                                         Zone **out_zone) {
   Zone *allocated_zone = nullptr;
-  Zone *finish_victim = nullptr;
   unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
   int new_zone = 0;
   IOStatus s;
-  bool ok = false;
-  (void)ok;
   ZenFSMetricsLatencyGuard guard(metrics_, ZENFS_IO_ALLOC_NON_WAL_LATENCY,
                                  Env::Default());
   metrics_->ReportQPS(ZENFS_IO_ALLOC_QPS, 1);
-
-  *out_zone = nullptr;
 
   // Check if a deferred IO error was set
   s = GetZoneDeferredStatus();
@@ -528,153 +686,76 @@ IOStatus ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime,
     return s;
   }
 
-  io_zones_mtx.lock();
-
-  /* Make sure we are below the zone open limit */
-  {
-    std::unique_lock<std::mutex> lk(zone_resources_mtx_);
-    zone_resources_.wait(lk, [this] {
-      if (open_io_zones_.load() < max_nr_open_io_zones_) return true;
-      return false;
-    });
+  /* TODO: this should not be done for wal files */
+  s = ApplyFinishThreshold();
+  if (!s.ok()) {
+      return s;
   }
 
-  /* Reset any unused zones and finish used zones under capacity treshold*/
-  for (const auto z : io_zones) {
-    if (!z->Acquire()) {
-      continue;
-    }
-
-    if (z->IsEmpty() || (z->IsFull() && z->IsUsed())) {
-      IOStatus status = z->CheckRelease();
-      if (!status.ok()) return status;
-      continue;
-    }
-
-    if (!z->IsUsed()) {
-      if (!z->IsFull()) active_io_zones_--;
-      s = z->Reset();
-      if (!s.ok()) {
-        Debug(logger_, "Failed resetting zone !");
-        return s;
-      }
-
-      IOStatus status = z->CheckRelease();
-      if (!status.ok()) return status;
-      continue;
-    }
-
-    if ((z->capacity_ < (z->max_capacity_ * finish_threshold_ / 100))) {
-      /* If there is less than finish_threshold_% remaining capacity in a
-       * non-open-zone, finish the zone */
-      s = z->Finish();
-      if (!s.ok()) {
-        Debug(logger_, "Failed finishing zone");
-        return s;
-      }
-      active_io_zones_--;
-    }
-
-    if (!z->IsFull()) {
-      if (finish_victim == nullptr) {
-        finish_victim = z;
-      } else if (finish_victim->capacity_ > z->capacity_) {
-        IOStatus status = finish_victim->CheckRelease();
-        if (!status.ok()) return status;
-        finish_victim = z;
-      } else {
-        IOStatus status = z->CheckRelease();
-        if (!status.ok()) return status;
-      }
-    } else {
-      IOStatus status = z->CheckRelease();
-      if (!status.ok()) return status;
-    }
+  /* TODO: this should be done in context of deletes */
+  s = ResetUnusedIOZones();
+  if (!s.ok()) {
+      return s;
   }
 
-  // Holding finish_victim if != nullptr
+  WaitForOpenIOZoneToken();
 
   /* Try to fill an already open zone(with the best life time diff) */
-  for (const auto z : io_zones) {
-    if (z->Acquire()) {
-      if ((z->used_capacity_ > 0) && !z->IsFull()) {
-        unsigned int diff = GetLifeTimeDiff(z->lifetime_, file_lifetime);
-        if (diff <= best_diff) {
-          if (allocated_zone != nullptr) {
-            IOStatus status = allocated_zone->CheckRelease();
-            if (!status.ok()) return status;
-          }
-          allocated_zone = z;
-          best_diff = diff;
-        } else {
-          IOStatus status = z->CheckRelease();
-          if (!status.ok()) return status;
-        }
-      } else {
-        IOStatus status = z->CheckRelease();
-        if (!status.ok()) return status;
-      }
-    }
+  s = GetBestOpenZoneMatch(file_lifetime, &best_diff, &allocated_zone);
+  if (!s.ok()) {
+    PutOpenIOZoneToken();
+    return s;
   }
 
-  // Holding finish_victim if != nullptr
   // Holding allocated_zone if != nullptr
 
   /* If we did not find a good match, allocate an empty one */
   if (best_diff >= LIFETIME_DIFF_NOT_GOOD) {
+
     /* If we at the active io zone limit, finish an open zone(if available) with
      * least capacity left */
-    if (active_io_zones_.load() == max_nr_active_io_zones_ &&
-        finish_victim != nullptr) {
-      s = finish_victim->Finish();
+    if (allocated_zone != nullptr) {
+      s = allocated_zone->CheckRelease();
       if (!s.ok()) {
-        Debug(logger_, "Failed finishing zone");
-        return s;
+         PutOpenIOZoneToken();
+         return s;
       }
-      active_io_zones_--;
+      allocated_zone = nullptr;
     }
 
-    if (active_io_zones_.load() < max_nr_active_io_zones_) {
-      for (const auto z : io_zones) {
-        if (z->Acquire()) {
-          if (z->IsEmpty()) {
-            z->lifetime_ = file_lifetime;
-            if (allocated_zone != nullptr) {
-              IOStatus status = allocated_zone->CheckRelease();
-              if (!status.ok()) return status;
-            }
-            allocated_zone = z;
-            active_io_zones_++;
-            new_zone = 1;
-            break;
-          } else {
-            IOStatus status = z->CheckRelease();
-            if (!status.ok()) return status;
-          }
-        }
+    /* We have to make sure we can open an empty zone */
+    while (!GetActiveIOZoneTokenIfAvailable()) {
+      s = FinishCheapestIOZone();
+      if (!s.ok()) {
+         PutOpenIOZoneToken();
+         return s;
       }
     }
-  }
 
-  if (finish_victim != nullptr) {
-    IOStatus status = finish_victim->CheckRelease();
-    if (!status.ok()) return status;
-    finish_victim = nullptr;
+    s = AllocateEmptyZone(&allocated_zone);
+    if (!s.ok()) {
+      PutOpenIOZoneToken();
+      return s;
+    }
+
+    if(allocated_zone != nullptr) {
+      assert(allocated_zone->IsBusy());
+      allocated_zone->lifetime_ = file_lifetime;
+      new_zone = true;
+    }
   }
 
   if (allocated_zone) {
-    ok = allocated_zone->IsBusy();
-    assert(ok);
-    open_io_zones_++;
+    assert(allocated_zone->IsBusy());
     Debug(logger_,
           "Allocating zone(new=%d) start: 0x%lx wp: 0x%lx lt: %d file lt: %d\n",
           new_zone, allocated_zone->start_, allocated_zone->wp_,
           allocated_zone->lifetime_, file_lifetime);
+  } else {
+    PutOpenIOZoneToken();
   }
 
-  io_zones_mtx.unlock();
   LogZoneStats();
-
   *out_zone = allocated_zone;
 
   metrics_->ReportGeneral(ZENFS_OPEN_ZONES, open_io_zones_);

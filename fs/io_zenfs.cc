@@ -238,12 +238,16 @@ IOStatus ZoneFile::CloseWR() {
 IOStatus ZoneFile::CloseActiveZone() {
   IOStatus s = IOStatus::OK();
   if (active_zone_) {
-    s = active_zone_->CloseWR();
+    bool full = active_zone_->IsFull();
+    s = active_zone_->Close();
+    ReleaseActiveZone();
     if (!s.ok()) {
       return s;
     }
-    ReleaseActiveZone();
-    zbd_->NotifyIOZoneClosed();
+    zbd_->PutOpenIOZoneToken();
+    if (full) {
+        zbd_->PutActiveIOZoneToken();
+    }
   }
   return s;
 }
@@ -378,7 +382,7 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
 
   if (!active_zone_) {
     Zone* zone = nullptr;
-    s = zbd_->AllocateZone(lifetime_, &zone);
+    s = zbd_->AllocateIOZone(lifetime_, &zone);
     if (!s.ok()) return s;
 
     if (!zone) {
@@ -401,7 +405,7 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
       }
 
       Zone* zone = nullptr;
-      s = zbd_->AllocateZone(lifetime_, &zone);
+      s = zbd_->AllocateIOZone(lifetime_, &zone);
       if (!s.ok()) return s;
 
       if (!zone) {
