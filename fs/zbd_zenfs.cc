@@ -405,6 +405,7 @@ ZonedBlockDevice::~ZonedBlockDevice() {
 }
 
 #define LIFETIME_DIFF_NOT_GOOD (100)
+#define LIFETIME_DIFF_COULD_BE_WORSE (50)
 
 unsigned int GetLifeTimeDiff(Env::WriteLifeTimeHint zone_lifetime,
                              Env::WriteLifeTimeHint file_lifetime) {
@@ -420,6 +421,7 @@ unsigned int GetLifeTimeDiff(Env::WriteLifeTimeHint zone_lifetime,
   }
 
   if (zone_lifetime > file_lifetime) return zone_lifetime - file_lifetime;
+  if (zone_lifetime == file_lifetime) return LIFETIME_DIFF_COULD_BE_WORSE;
 
   return LIFETIME_DIFF_NOT_GOOD;
 }
@@ -654,33 +656,39 @@ Zone *ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
   // Holding allocated_zone if != nullptr
 
   /* If we did not find a good match, allocate an empty one */
-  if (best_diff >= LIFETIME_DIFF_NOT_GOOD) {
+  if (best_diff >= LIFETIME_DIFF_COULD_BE_WORSE) {
     if (io_type == IOType::kWAL && allocated_zone != nullptr) {
         fprintf(stdout, "\n Did not find a good zone for WAL allocation. Best diff: %d\n",
                 (int)best_diff);
     }
 
-    /* If we at the active io zone limit, finish an open zone(if available) with
-     * least capacity left */
-    if (allocated_zone != nullptr) {
-      ok = allocated_zone->Release();
-      assert(ok);
-      allocated_zone = nullptr;
-    }
+    bool got_token = GetActiveIOZoneTokenIfAvailable();
 
-    /* We have to make sure we can open an empty zone */
-    while (!GetActiveIOZoneTokenIfAvailable()) {
-      s = FinishCheapestIOZone();
-      if (!s.ok()) {
-        Debug(logger_, "Failed finishing zone");
+    if (allocated_zone != nullptr) {
+       if (!got_token && best_diff == LIFETIME_DIFF_COULD_BE_WORSE) {
+          Debug(logger_, "Allocator: avoided a finish by relaxing lifetime diff requirement\n");
+      } else {
+        ok = allocated_zone->Release();
+        assert(ok);
+        allocated_zone = nullptr;
       }
     }
 
-    allocated_zone = AllocateEmptyZone();
-    if(allocated_zone != nullptr) {
-      assert(allocated_zone->IsBusy());
-      allocated_zone->lifetime_ = file_lifetime;
-      new_zone = true;
+    if (allocated_zone == nullptr) {
+      /* We have to make sure we can open an empty zone */
+      while (!got_token && !GetActiveIOZoneTokenIfAvailable()) {
+        s = FinishCheapestIOZone();
+        if (!s.ok()) {
+          Debug(logger_, "Failed finishing zone");
+        }
+      }
+
+      allocated_zone = AllocateEmptyZone();
+      if(allocated_zone != nullptr) {
+        assert(allocated_zone->IsBusy());
+        allocated_zone->lifetime_ = file_lifetime;
+        new_zone = true;
+      }
     }
   }
 
