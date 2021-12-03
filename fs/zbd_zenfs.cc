@@ -29,6 +29,7 @@
 
 #include "rocksdb/env.h"
 #include "rocksdb/io_status.h"
+#include "snapshot.h"
 
 #define KB (1024)
 #define MB (1024 * KB)
@@ -721,6 +722,10 @@ void ZonedBlockDevice::SetZoneDeferredStatus(IOStatus status) {
   if (!zone_deferred_status_.ok()) {
     zone_deferred_status_ = status;
   }
+}
+
+void ZonedBlockDevice::GetZoneSnapshot(std::vector<ZoneSnapshot> &snapshot) {
+  for (auto &zone : io_zones) snapshot.emplace_back(*zone);
 }
 
 }  // namespace ROCKSDB_NAMESPACE

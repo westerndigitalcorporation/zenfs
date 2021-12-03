@@ -30,6 +30,7 @@
 namespace ROCKSDB_NAMESPACE {
 
 class ZonedBlockDevice;
+class ZoneSnapshot;
 
 class Zone {
   ZonedBlockDevice *zbd_;
@@ -151,6 +152,8 @@ class ZonedBlockDevice {
   void SetZoneDeferredStatus(IOStatus status);
 
   std::shared_ptr<ZenFSMetrics> GetMetrics() { return metrics_; }
+
+  void GetZoneSnapshot(std::vector<ZoneSnapshot> &snapshot);
 
  private:
   std::string ErrorToString(int err);

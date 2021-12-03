@@ -20,6 +20,7 @@
 
 #include "metrics_sample.h"
 #include "rocksdb/utilities/object_registry.h"
+#include "snapshot.h"
 #include "util/coding.h"
 #include "util/crc32c.h"
 
@@ -1169,6 +1170,17 @@ std::map<std::string, std::string> ListZenFileSystems() {
   }
 
   return zenFileSystems;
+}
+
+void ZenFS::GetZoneSnapshot(std::vector<ZoneSnapshot>& zones) {
+  zbd_->GetZoneSnapshot(zones);
+}
+
+void ZenFS::GetZoneFileSnapshot(std::vector<ZoneFileSnapshot>& zone_files) {
+  std::lock_guard<std::mutex> file_lock(files_mtx_);
+  for (auto& file_it : files_) {
+    zone_files.emplace_back(*file_it.second);
+  }
 }
 
 extern "C" FactoryFunc<FileSystem> zenfs_filesystem_reg;
