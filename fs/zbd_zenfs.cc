@@ -7,6 +7,7 @@
 #if !defined(ROCKSDB_LITE) && !defined(OS_WIN)
 
 #include "zbd_zenfs.h"
+#include "snapshot.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -721,6 +722,10 @@ void ZonedBlockDevice::SetZoneDeferredStatus(IOStatus status) {
   if (!zone_deferred_status_.ok()) {
     zone_deferred_status_ = status;
   }
+}
+
+void ZonedBlockDevice::GetZoneSnapshot(std::vector<ZoneSnapshot> &snapshot) {
+  for (auto &zone : io_zones) snapshot.emplace_back(*zone);
 }
 
 }  // namespace ROCKSDB_NAMESPACE
