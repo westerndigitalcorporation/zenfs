@@ -521,14 +521,23 @@ IOStatus ZonedBlockDevice::ResetUnusedIOZones() {
   return IOStatus::OK();
 }
 
-void ZonedBlockDevice::WaitForOpenIOZoneToken() {
+void ZonedBlockDevice::WaitForOpenIOZoneToken(bool prioritized) {
+  long allocator_open_limit;
+
+  /* Avoid non-priortized allocators from starving prioritized ones */
+  if (prioritized) {
+    allocator_open_limit = max_nr_open_io_zones_;
+  } else {
+    allocator_open_limit = max_nr_open_io_zones_ - 1;
+  }
+
   /* Wait for an open IO Zone token - after this function returns
    * the caller is allowed to write to a closed zone. The callee
    * is responsible for calling a PutOpenIOZoneToken to return the resource
    */
   std::unique_lock<std::mutex> lk(zone_resources_mtx_);
-  zone_resources_.wait(lk, [this] {
-    if (open_io_zones_.load() < max_nr_open_io_zones_) {
+  zone_resources_.wait(lk, [this, allocator_open_limit] {
+    if (open_io_zones_.load() < allocator_open_limit) {
       open_io_zones_++;
       return true;
     } else {
@@ -725,7 +734,7 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
     }
   }
 
-  WaitForOpenIOZoneToken();
+  WaitForOpenIOZoneToken(io_type == IOType::kWAL);
 
   /* Try to fill an already open zone(with the best life time diff) */
   s = GetBestOpenZoneMatch(file_lifetime, &best_diff, &allocated_zone);

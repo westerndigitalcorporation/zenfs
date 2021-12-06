@@ -161,7 +161,7 @@ class ZonedBlockDevice {
   std::string ErrorToString(int err);
   IOStatus GetZoneDeferredStatus();
   bool GetActiveIOZoneTokenIfAvailable();
-  void WaitForOpenIOZoneToken();
+  void WaitForOpenIOZoneToken(bool prioritized);
   IOStatus ApplyFinishThreshold();
   IOStatus FinishCheapestIOZone();
   IOStatus GetBestOpenZoneMatch(Env::WriteLifeTimeHint file_lifetime,
