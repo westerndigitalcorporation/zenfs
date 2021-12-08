@@ -6,10 +6,11 @@
 
 #pragma once
 #include "rocksdb/env.h"
-
 namespace ROCKSDB_NAMESPACE {
 
 class ZenFSMetricsGuard;
+class ZenFSSnapshot;
+class ZenFSSnapshotOptions;
 
 struct ZenFSMetrics {
  public:
@@ -30,6 +31,8 @@ struct ZenFSMetrics {
   // You can give a type for type-checking.
   virtual void Report(Label label, size_t value,
                       ReporterType type_check = 0) = 0;
+  virtual void ReportSnapshot(const ZenFSSnapshot& snapshot,
+                              const ZenFSSnapshotOptions& options) = 0;
 
  public:
   // Syntactic sugars for type-checking.
@@ -44,6 +47,7 @@ struct ZenFSMetrics {
   virtual void ReportGeneral(Label label, size_t data) {
     Report(label, data, 0);
   }
+
   // and more
 };
 
@@ -55,6 +59,9 @@ struct NoZenFSMetrics : public ZenFSMetrics {
   virtual void AddReporter(uint32_t /*label*/, uint32_t /*type*/) override {}
   virtual void Report(uint32_t /*label*/, size_t /*value*/,
                       uint32_t /*type_check*/) override {}
+  virtual void ReportSnapshot(
+      const ZenFSSnapshot& /*snapshot*/,
+      const ZenFSSnapshotOptions& /*options*/) override {}
 };
 
 // The implementation of this class will start timing when initialized,
@@ -92,36 +99,42 @@ struct ZenFSMetricsLatencyGuard {
 enum ZenFSMetricsHistograms : uint32_t {
   ZENFS_HISTOGRAM_ENUM_MIN,
 
-  ZENFS_FG_WRITE_LATENCY,
-  ZENFS_BG_WRITE_LATENCY,
-
   ZENFS_READ_LATENCY,
-  ZENFS_FG_SYNC_LATENCY,
-  ZENFS_BG_SYNC_LATENCY,
-  ZENFS_IO_ALLOC_WAL_LATENCY,
-  ZENFS_IO_ALLOC_NON_WAL_LATENCY,
-  ZENFS_IO_ALLOC_WAL_ACTUAL_LATENCY,
-  ZENFS_IO_ALLOC_NON_WAL_ACTUAL_LATENCY,
-  ZENFS_META_ALLOC_LATENCY,
-  ZENFS_METADATA_SYNC_LATENCY,
-  ZENFS_ROLL_LATENCY,
-
-  ZENFS_WRITE_QPS,
   ZENFS_READ_QPS,
-  ZENFS_SYNC_QPS,
-  ZENFS_IO_ALLOC_QPS,
-  ZENFS_META_ALLOC_QPS,
-  ZENFS_ROLL_QPS,
 
+  ZENFS_WRITE_LATENCY,
+  ZENFS_WAL_WRITE_LATENCY,
+  ZENFS_NON_WAL_WRITE_LATENCY,
+  ZENFS_WRITE_QPS,
   ZENFS_WRITE_THROUGHPUT,
+
+  ZENFS_SYNC_LATENCY,
+  ZENFS_WAL_SYNC_LATENCY,
+  ZENFS_NON_WAL_SYNC_LATENCY,
+  ZENFS_SYNC_QPS,
+
+  ZENFS_IO_ALLOC_LATENCY,
+  ZENFS_WAL_IO_ALLOC_LATENCY,
+  ZENFS_NON_WAL_IO_ALLOC_LATENCY,
+  ZENFS_IO_ALLOC_QPS,
+
+  ZENFS_META_ALLOC_LATENCY,
+  ZENFS_META_ALLOC_QPS,
+
+  ZENFS_META_SYNC_LATENCY,
+
+  ZENFS_ROLL_LATENCY,
+  ZENFS_ROLL_QPS,
   ZENFS_ROLL_THROUGHPUT,
 
-  ZENFS_ACTIVE_ZONES,
-  ZENFS_OPEN_ZONES,
-  ZENFS_FREE_SPACE,
-  ZENFS_USED_SPACE,
-  ZENFS_RECLAIMABLE_SPACE,
-  ZENFS_RESETABLE_ZONES,
+  ZENFS_ACTIVE_ZONES_COUNT,
+  ZENFS_OPEN_ZONES_COUNT,
+
+  ZENFS_FREE_SPACE_SIZE,
+  ZENFS_USED_SPACE_SIZE,
+  ZENFS_RECLAIMABLE_SPACE_SIZE,
+
+  ZENFS_RESETABLE_ZONES_COUNT,
 
   ZENFS_HISTOGRAM_ENUM_MAX,
 };
@@ -132,7 +145,12 @@ enum ZenFSMetricsReporterType : uint32_t {
   ZENFS_REPORTER_TYPE_GENERAL,
   ZENFS_REPORTER_TYPE_LATENCY,
   ZENFS_REPORTER_TYPE_QPS,
-  ZENFS_REPORTER_TYPE_THROUGHPUT
+  ZENFS_REPORTER_TYPE_THROUGHPUT,
 };
+
+#define ZENFS_LABEL(label, type) ZENFS_##label##_##type
+#define ZENFS_LABEL_DETAILED(label, sub_label, type) \
+  ZENFS_##sub_label##_##label##_##type
+// eg : ZENFS_LABEL(WRITE, WAL, THROUGHPUT) => ZENFS_WRITE_WAL_THROUGHPUT
 
 }  // namespace ROCKSDB_NAMESPACE

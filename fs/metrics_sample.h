@@ -5,69 +5,64 @@
 
 #include "metrics.h"
 #include "port/port.h"
+#include "snapshot.h"
 #include "util/mutexlock.h"
 
 namespace ROCKSDB_NAMESPACE {
 
 const std::unordered_map<ZenFSMetricsHistograms, std::string>
     ZenFSHistogramsNameMap = {
-        {ZENFS_FG_WRITE_LATENCY, "zenfs_fg_write_latency"},
-        {ZENFS_BG_WRITE_LATENCY, "zenfs_bg_write_latency"},
+        {ZENFS_WRITE_LATENCY, "zenfs_write_latency"},
         {ZENFS_READ_LATENCY, "zenfs_read_latency"},
-        {ZENFS_FG_SYNC_LATENCY, "fg_zenfs_sync_latency"},
-        {ZENFS_BG_SYNC_LATENCY, "bg_zenfs_sync_latency"},
-        {ZENFS_IO_ALLOC_WAL_LATENCY, "zenfs_io_alloc_wal_latency"},
-        {ZENFS_IO_ALLOC_NON_WAL_LATENCY, "zenfs_io_alloc_non_wal_latency"},
-        {ZENFS_IO_ALLOC_WAL_ACTUAL_LATENCY,
-         "zenfs_io_alloc_wal_actual_latency"},
-        {ZENFS_IO_ALLOC_NON_WAL_ACTUAL_LATENCY,
-         "zenfs_io_alloc_non_wal_actual_latency"},
+        {ZENFS_SYNC_LATENCY, "zenfs_sync_latency"},
+        {ZENFS_IO_ALLOC_LATENCY, "zenfs_io_alloc_latency"},
         {ZENFS_META_ALLOC_LATENCY, "rzenfs_meta_alloc_latency"},
-        {ZENFS_METADATA_SYNC_LATENCY, "zenfs_metadata_sync_latency"},
+        {ZENFS_META_SYNC_LATENCY, "zenfs_metadata_sync_latency"},
         {ZENFS_ROLL_LATENCY, "zenfs_roll_latency"},
+
         {ZENFS_WRITE_QPS, "zenfs_write_qps"},
         {ZENFS_READ_QPS, "zenfs_read_qps"},
         {ZENFS_SYNC_QPS, "zenfs_sync_qps"},
         {ZENFS_IO_ALLOC_QPS, "zenfs_io_alloc_qps"},
         {ZENFS_META_ALLOC_QPS, "zenfs_meta_alloc_qps"},
         {ZENFS_ROLL_QPS, "zenfs_roll_qps"},
+
         {ZENFS_WRITE_THROUGHPUT, "rzenfs_write_throughput"},
         {ZENFS_ROLL_THROUGHPUT, "zenfs_roll_throughput"},
-        {ZENFS_ACTIVE_ZONES, "zenfs_active_zones"},
-        {ZENFS_OPEN_ZONES, "zenfs_open_zones"},
-        {ZENFS_FREE_SPACE, "zenfs_free_space"},
-        {ZENFS_USED_SPACE, "zenfs_used_space"},
-        {ZENFS_RECLAIMABLE_SPACE, "zenfs_reclaimable_space"},
-        {ZENFS_RESETABLE_ZONES, "zenfs_resetable_zones"}};
+
+        {ZENFS_FREE_SPACE_SIZE, "zenfs_free_space"},
+        {ZENFS_USED_SPACE_SIZE, "zenfs_used_space"},
+        {ZENFS_RECLAIMABLE_SPACE_SIZE, "zenfs_reclaimable_space"},
+
+        {ZENFS_ACTIVE_ZONES_COUNT, "zenfs_active_zones"},
+        {ZENFS_OPEN_ZONES_COUNT, "zenfs_open_zones"},
+        {ZENFS_RESETABLE_ZONES_COUNT, "zenfs_resetable_zones"}};
 
 const std::unordered_map<ZenFSMetricsHistograms, ZenFSMetricsReporterType>
     ZenFSHistogramsTypeMap = {
-        {ZENFS_FG_WRITE_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
-        {ZENFS_BG_WRITE_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
         {ZENFS_READ_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
-        {ZENFS_FG_SYNC_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
-        {ZENFS_BG_SYNC_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
-        {ZENFS_IO_ALLOC_WAL_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
-        {ZENFS_IO_ALLOC_NON_WAL_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
-        {ZENFS_IO_ALLOC_WAL_ACTUAL_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
-        {ZENFS_IO_ALLOC_NON_WAL_ACTUAL_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
+        {ZENFS_IO_ALLOC_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
         {ZENFS_META_ALLOC_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
-        {ZENFS_METADATA_SYNC_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
+        {ZENFS_META_SYNC_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
         {ZENFS_ROLL_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
+
         {ZENFS_WRITE_QPS, ZENFS_REPORTER_TYPE_QPS},
         {ZENFS_READ_QPS, ZENFS_REPORTER_TYPE_QPS},
         {ZENFS_SYNC_QPS, ZENFS_REPORTER_TYPE_QPS},
         {ZENFS_IO_ALLOC_QPS, ZENFS_REPORTER_TYPE_QPS},
         {ZENFS_META_ALLOC_QPS, ZENFS_REPORTER_TYPE_QPS},
         {ZENFS_ROLL_QPS, ZENFS_REPORTER_TYPE_QPS},
+
         {ZENFS_WRITE_THROUGHPUT, ZENFS_REPORTER_TYPE_THROUGHPUT},
         {ZENFS_ROLL_THROUGHPUT, ZENFS_REPORTER_TYPE_THROUGHPUT},
-        {ZENFS_ACTIVE_ZONES, ZENFS_REPORTER_TYPE_GENERAL},
-        {ZENFS_OPEN_ZONES, ZENFS_REPORTER_TYPE_GENERAL},
-        {ZENFS_FREE_SPACE, ZENFS_REPORTER_TYPE_GENERAL},
-        {ZENFS_USED_SPACE, ZENFS_REPORTER_TYPE_GENERAL},
-        {ZENFS_RECLAIMABLE_SPACE, ZENFS_REPORTER_TYPE_GENERAL},
-        {ZENFS_RESETABLE_ZONES, ZENFS_REPORTER_TYPE_GENERAL}};
+
+        {ZENFS_FREE_SPACE_SIZE, ZENFS_REPORTER_TYPE_GENERAL},
+        {ZENFS_USED_SPACE_SIZE, ZENFS_REPORTER_TYPE_GENERAL},
+        {ZENFS_RECLAIMABLE_SPACE_SIZE, ZENFS_REPORTER_TYPE_GENERAL},
+
+        {ZENFS_ACTIVE_ZONES_COUNT, ZENFS_REPORTER_TYPE_GENERAL},
+        {ZENFS_OPEN_ZONES_COUNT, ZENFS_REPORTER_TYPE_GENERAL},
+        {ZENFS_RESETABLE_ZONES_COUNT, ZENFS_REPORTER_TYPE_GENERAL}};
 
 struct ReporterSample {
  public:
@@ -165,6 +160,14 @@ struct ZenFSMetricsSample : public ZenFSMetrics {
         reporter.Record(GetTime(), value);
       } break;
     }
+  }
+  virtual void ReportSnapshot(const ZenFSSnapshot& snapshot,
+                              const ZenFSSnapshotOptions& options) {
+    if (options.zbd_.get_free_space_) {
+      uint64_t free_space_gb = snapshot.zbd_.GetFreeSpace() >> 30;
+      ReportGeneral(ZENFS_LABEL(FREE_SPACE, SIZE), free_space_gb);
+    }
+    // Report anything you care about.
   }
 
  public:

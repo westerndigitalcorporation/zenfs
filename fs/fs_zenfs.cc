@@ -315,9 +315,9 @@ IOStatus ZenFS::RollMetaZoneLocked() {
   Zone* new_meta_zone = nullptr;
   IOStatus s;
 
-  ZenFSMetricsLatencyGuard guard(zbd_->GetMetrics(), ZENFS_ROLL_LATENCY,
+  ZenFSMetricsLatencyGuard guard(zbd_->GetMetrics(), ZENFS_LABEL(ROLL, LATENCY),
                                  Env::Default());
-  zbd_->GetMetrics()->ReportQPS(ZENFS_ROLL_QPS, 1);
+  zbd_->GetMetrics()->ReportQPS(ZENFS_LABEL(ROLL, QPS), 1);
 
   IOStatus status = zbd_->AllocateMetaZone(&new_meta_zone);
   if (!status.ok()) return status;
@@ -397,8 +397,8 @@ IOStatus ZenFS::SyncFileMetadata(std::shared_ptr<ZoneFile> zoneFile) {
   std::string fileRecord;
   std::string output;
   IOStatus s;
-  ZenFSMetricsLatencyGuard guard(zbd_->GetMetrics(),
-                                 ZENFS_METADATA_SYNC_LATENCY, Env::Default());
+  ZenFSMetricsLatencyGuard guard(
+      zbd_->GetMetrics(), ZENFS_LABEL(META_SYNC, LATENCY), Env::Default());
   std::lock_guard<std::mutex> lock(files_mtx_);
   zoneFile->SetFileModificationTime(time(0));
   PutFixed32(&output, kFileUpdate);
@@ -1204,16 +1204,31 @@ std::map<std::string, std::string> ListZenFileSystems() {
 
   return zenFileSystems;
 }
-
 void ZenFS::GetZoneSnapshot(std::vector<ZoneSnapshot>& zones) {
-  zbd_->GetZoneSnapshot(zones);
+  ZenFSSnapshotOptions options;
+  if (options.zone_.enabled_) zbd_->GetZoneSnapshot(zones, options);
 }
-
 void ZenFS::GetZoneFileSnapshot(std::vector<ZoneFileSnapshot>& zone_files) {
-  std::lock_guard<std::mutex> file_lock(files_mtx_);
-  for (auto& file_it : files_) {
-    zone_files.emplace_back(*file_it.second);
+  ZenFSSnapshotOptions options;
+  if (options.zone_file_.enabled_) {
+    std::lock_guard<std::mutex> file_lock(files_mtx_);
+    for (auto& file_it : files_)
+      zone_files.emplace_back(*file_it.second, options);
   }
+}
+void ZenFS::GetZenFSSnapshot(ZenFSSnapshot& snapshot,
+                             const ZenFSSnapshotOptions& options) {
+  if (options.zbd_.enabled_) {
+    snapshot.zbd_ = ZBDSnapshot(*zbd_, options);
+  }
+  if (options.zone_.enabled_) zbd_->GetZoneSnapshot(snapshot.zones_, options);
+  if (options.zone_file_.enabled_) {
+    std::lock_guard<std::mutex> file_lock(files_mtx_);
+    for (auto& file_it : files_)
+      snapshot.zone_files_.emplace_back(*file_it.second, options);
+  }
+  if (options.trigger_report_)
+    zbd_->GetMetrics()->ReportSnapshot(snapshot, options);
 }
 
 extern "C" FactoryFunc<FileSystem> zenfs_filesystem_reg;
