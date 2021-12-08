@@ -7,7 +7,6 @@
 #include <fcntl.h>
 #include <gflags/gflags.h>
 #include <rocksdb/file_system.h>
-#include <rocksdb/plugin/zenfs/fs/fs_zenfs.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -18,6 +17,12 @@
 #include <memory>
 #include <sstream>
 #include <streambuf>
+
+#ifdef WITH_TERARKDB
+#include <fs/fs_zenfs.h>
+#else
+#include <rocksdb/plugin/zenfs/fs/fs_zenfs.h>
+#endif
 
 using GFLAGS_NAMESPACE::ParseCommandLineFlags;
 using GFLAGS_NAMESPACE::RegisterFlagValidator;
