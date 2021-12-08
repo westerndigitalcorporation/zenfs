@@ -12,19 +12,20 @@ jobs:
         run: rm -rf ${GITHUB_WORKSPACE}/*
       - name: Checkout build scripts
         run: git clone ~/harness.git
-      - name: Checkout zbdbench
-        run: git clone ~/zbdbench.git harness/rocksdb-context/zbdbench
-      - name: Checkout rocksdb
+      - name: Checkout percona-server
         uses: actions/checkout@v2
         with:
-          repository: facebook/rocksdb
-          ref: v6.25.3
-          path: harness/rocksdb-context/rocksdb
-      - name: Checkout zenfs
+          repository: percona/percona-server
+          ref: Percona-Server-8.0.26-16
+          path: harness/percona-context/percona-server
+          submodules: true
+      - name: Remove default zenfs
+        run: rm -r harness/percona-context/percona-server/storage/rocksdb/rocksdb_plugins/zenfs
+      - name: Checkout recent zenfs
         uses: actions/checkout@v2
         with:
           fetch-depth: 0
-          path: harness/rocksdb-context/rocksdb/plugin/zenfs
+          path: harness/percona-context/percona-server/storage/rocksdb/rocksdb_plugins/zenfs
       - name: Run MTR tests
         run: cd harness && make NO_VAGRANT=1 results/zenfs-mtr.xml 
       - name: Remove docker images
