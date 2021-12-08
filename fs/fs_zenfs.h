@@ -21,6 +21,8 @@ namespace ROCKSDB_NAMESPACE {
 
 class ZoneSnapshot;
 class ZoneFileSnapshot;
+class ZenFSSnapshot;
+class ZenFSSnapshotOptions;
 
 class Superblock {
   uint32_t magic_ = 0;
@@ -356,8 +358,11 @@ class ZenFS : public FileSystemWrapper {
                                 IODebugContext* /*dbg*/) override {
     return IOStatus::NotSupported("AreFilesSame is not supported in ZenFS");
   }
+
   void GetZoneSnapshot(std::vector<ZoneSnapshot>& zones);
   void GetZoneFileSnapshot(std::vector<ZoneFileSnapshot>& zone_files);
+  void GetZenFSSnapshot(ZenFSSnapshot& snapshot,
+                        const ZenFSSnapshotOptions& options);
 };
 #endif  // !defined(ROCKSDB_LITE) && defined(OS_LINUX)
 
