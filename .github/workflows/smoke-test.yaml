@@ -33,3 +33,4 @@ jobs:
         if: always()
       - name: Remove docker images
         run: docker image prune --force
+        if: always()
