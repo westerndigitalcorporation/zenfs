@@ -5,7 +5,7 @@ on:
   pull_request:
     branches:
     - master
-name: Smoke Test
+name: Quick Test
 jobs:
   smoke-test:
     runs-on: self-hosted
@@ -28,6 +28,8 @@ jobs:
           path: harness/rocksdb-context/rocksdb/plugin/zenfs
       - name: Run smoke tests
         run: cd harness && make NO_VAGRANT=1 results/zenfs-smoke.xml 
+      - name: Run utils tests
+        run: cd harness && make NO_VAGRANT=1 results/zenfs-utils.xml 
       - name: Collect Results
         run: cd harness && make NO_VAGRANT=1 upload 
         if: always()
