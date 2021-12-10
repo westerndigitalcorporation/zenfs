@@ -27,7 +27,7 @@ jobs:
           fetch-depth: 0
           path: harness/rocksdb-context/rocksdb/plugin/zenfs
       - name: Run ZBDBench
-        run: cd harness && make NO_VAGRANT=1 results/zbdbench.xml 
+        run: cd harness && st --silent -o logs/make make NO_VAGRANT=1 results/zbdbench.xml 
       - name: Collect Results
         run: cd harness && make NO_VAGRANT=1 upload 
         if: always()
