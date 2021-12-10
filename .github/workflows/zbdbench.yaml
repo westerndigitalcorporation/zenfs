@@ -24,6 +24,7 @@ jobs:
       - name: Checkout zenfs
         uses: actions/checkout@v2
         with:
+          fetch-depth: 0
           path: harness/rocksdb-context/rocksdb/plugin/zenfs
       - name: Run ZBDBench
         run: cd harness && make NO_VAGRANT=1 results/zbdbench.xml 
