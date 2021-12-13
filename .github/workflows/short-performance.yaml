@@ -27,7 +27,7 @@ jobs:
           fetch-depth: 0
           path: harness/rocksdb-context/rocksdb/plugin/zenfs
       - name: Run short performance test
-        run: cd harness && st --silent -o logs/make make NO_VAGRANT=1 results/zenfs-quick.xml 
+        run: cd harness && st --silent -o logs/make -- disk-select --disk 1TB -- make NO_VAGRANT=1 results/zenfs-quick.xml 
       - name: Collect Results
         run: cd harness && make NO_VAGRANT=1 upload 
         if: always()
