@@ -6,8 +6,12 @@ on:
 name: Long Performance Test
 jobs:
   long-performance:
+    name: Long Performance
     runs-on: self-hosted
-    timeout-minutes: 1440
+    timeout-minutes: 4320
+    strategy:
+      matrix:
+        drive-size: [1TB]
     steps:
       - name: Clean
         run: rm -rf ${GITHUB_WORKSPACE}/*
@@ -26,11 +30,12 @@ jobs:
         with:
           fetch-depth: 0
           path: harness/rocksdb-context/rocksdb/plugin/zenfs
-      - name: Run long performance test
-        run: cd harness && st --silent -o logs/make -- disk-select --disk 2TB -- make NO_VAGRANT=1 results/zenfs-long.xml 
-      - name: Collect Results
+      - name: Run long performance test ${{ matrix.drive-size }}
+        run: cd harness && st --silent -o logs/make -- disk-select --disk ${{ matrix.drive-size }} -- make NO_VAGRANT=1 results/zenfs-long.xml 
+      - name: Collect Results ${{ matrix.drive-size }}
         run: cd harness && make NO_VAGRANT=1 upload 
         if: always()
       - name: Remove docker images
         run: docker image prune --force
         if: always()
+
