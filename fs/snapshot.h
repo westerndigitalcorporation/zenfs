@@ -29,11 +29,12 @@ struct ZenFSSnapshotOptions {
   } zbd_;
   struct ZoneSnapshotOptions {
     bool enabled_ = 1;
-    bool id_ = 1;
-    bool remaining_capacity_ = 1;
-    bool max_capacity_ = 1;
     bool write_position_ = 1;
     bool start_position_ = 1;
+    bool id_ = 1;
+    bool remaining_capacity_ = 1;
+    bool used_capacity_ = 1;
+    bool max_capacity_ = 1;
   } zone_;
   struct ZoneFileSnapshotOptions {
     bool enabled_ = 1;
@@ -77,22 +78,26 @@ class ZBDSnapshot {
 class ZoneSnapshot {
  private:
   uint64_t start_;
-  uint64_t capacity_;
-  uint64_t max_capacity_;
   uint64_t wp_;
+
+  uint64_t capacity_;
+  uint64_t used_capacity_;
+  uint64_t max_capacity_;
 
  public:
   ZoneSnapshot(const Zone& zone, const ZenFSSnapshotOptions& options)
-      : start_(), capacity_(), max_capacity_(), wp_() {
+      : start_(), wp_(), capacity_(), used_capacity_(), max_capacity_() {
     if (options.zone_.enabled_) {
       if (options.zone_.id_ || options.zone_.write_position_) wp_ = zone.wp_;
       if (options.zone_.remaining_capacity_) capacity_ = zone.capacity_;
+      if (options.zone_.used_capacity_) capacity_ = zone.used_capacity_;
       if (options.zone_.max_capacity_) max_capacity_ = zone.max_capacity_;
     }
   }
 
   uint64_t ID() const { return start_; }
   uint64_t RemainingCapacity() const { return capacity_; }
+  uint64_t UsedCapacity() const { return used_capacity_; }
   uint64_t MaxCapacity() const { return max_capacity_; }
   uint64_t StartPosition() const { return start_; }
   uint64_t WritePosition() const { return wp_; }
