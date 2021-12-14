@@ -1108,7 +1108,6 @@ std::map<std::string, Env::WriteLifeTimeHint> ZenFS::GetWriteLifeTimeHints() {
   return hint_map;
 }
 
-#ifndef NDEBUG
 static std::string GetLogFilename(std::string bdev) {
   std::ostringstream ss;
   time_t t = time(0);
@@ -1120,19 +1119,26 @@ static std::string GetLogFilename(std::string bdev) {
 
   return ss.str();
 }
-#endif
 
 Status NewZenFS(FileSystem** fs, const std::string& bdevname,
                 std::shared_ptr<ZenFSMetrics> metrics) {
   std::shared_ptr<Logger> logger;
   Status s;
 
-#ifndef NDEBUG
+  // TerarkDB needs to log important information in production while ZenFS
+  // doesn't (currently).
+  //
+  // TODO(guokuankuan@bytedance.com) We need to figure out how to reuse
+  // RocksDB's logger in the future.
+#if defined(NDEBUG) || defined(WITH_TERARKDB)
   s = Env::Default()->NewLogger(GetLogFilename(bdevname), &logger);
   if (!s.ok()) {
     fprintf(stderr, "ZenFS: Could not create logger");
   } else {
     logger->SetInfoLogLevel(DEBUG_LEVEL);
+#ifdef WITH_TERARKDB
+    logger->SetInfoLogLevel(INFO_LEVEL);
+#endif
   }
 #endif
 
@@ -1227,8 +1233,11 @@ void ZenFS::GetZenFSSnapshot(ZenFSSnapshot& snapshot,
     for (auto& file_it : files_)
       snapshot.zone_files_.emplace_back(*file_it.second, options);
   }
-  if (options.trigger_report_)
+  if (options.trigger_report_) {
     zbd_->GetMetrics()->ReportSnapshot(snapshot, options);
+  }
+
+  zbd_->LogGarbageInfo();
 }
 
 extern "C" FactoryFunc<FileSystem> zenfs_filesystem_reg;
