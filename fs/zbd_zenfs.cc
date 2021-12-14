@@ -431,6 +431,36 @@ void ZonedBlockDevice::LogZoneUsage() {
   }
 }
 
+void ZonedBlockDevice::LogGarbageInfo() {
+  // Log zone garbage stats vector.
+  //
+  // The values in the vector represents how many zones with target garbage percent.
+  // Garbage percent of each index: [0%, <10%, < 20%, ... <100%, 100%]
+  // For example `[100, 1, 2, 3....]` means 100 zones are empty, 1 zone has less than
+  // 10% garbage, 2 zones have  10% ~ 20% garbage ect.
+  //
+  // We don't need to lock io_zones since we only read data and we don't need the result
+  // to be precise.
+  int zone_gc_stat[12] = {0};
+  for(auto z: io_zones) {
+    // Calculate garbage percent
+    if (z->IsEmpty()) {
+      zone_gc_stat[0]++;
+      continue;
+    }
+    double garbage_rate = double(z->wp_ - z->start_ - z->used_capacity_) / z->max_capacity_;
+    // Find appropriate vector index that represet current garbage percent.
+    int idx = int((garbage_rate + 0.1) * 10);
+    zone_gc_stat[idx]++;
+  }
+
+  std::stringstream ss;
+  ss << "Zone Garbage Stats: [";
+  for(int i = 0; i < 12; i++) { ss << zone_gc_stat[i] << " "; }
+  ss << "]";
+  Info(logger_, "%s", ss.str().data());
+}
+
 ZonedBlockDevice::~ZonedBlockDevice() {
   for (const auto z : meta_zones) {
     delete z;
