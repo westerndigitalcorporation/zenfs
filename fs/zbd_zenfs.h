@@ -134,6 +134,7 @@ class ZonedBlockDevice {
   Status ResetUnusedIOZones();
   void LogZoneStats();
   void LogZoneUsage();
+  void LogGarbageInfo();
 
   int GetReadFD() { return read_f_; }
   int GetReadDirectFD() { return read_direct_f_; }
