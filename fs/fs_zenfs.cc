@@ -1246,31 +1246,30 @@ std::map<std::string, std::string> ListZenFileSystems() {
 
   return zenFileSystems;
 }
-void ZenFS::GetZoneSnapshot(std::vector<ZoneSnapshot>& zones) {
-  ZenFSSnapshotOptions options;
-  if (options.zone_.enabled_) zbd_->GetZoneSnapshot(zones, options);
-}
-void ZenFS::GetZoneFileSnapshot(std::vector<ZoneFileSnapshot>& zone_files) {
-  ZenFSSnapshotOptions options;
-  if (options.zone_file_.enabled_) {
-    std::lock_guard<std::mutex> file_lock(files_mtx_);
-    for (auto& file_it : files_)
-      zone_files.emplace_back(*file_it.second, options);
-  }
-}
+
 void ZenFS::GetZenFSSnapshot(ZenFSSnapshot& snapshot,
                              const ZenFSSnapshotOptions& options) {
-  if (options.zbd_.enabled_) {
-    snapshot.zbd_ = ZBDSnapshot(*zbd_, options);
+  if (options.zbd_) {
+    snapshot.zbd_ = ZBDSnapshot(*zbd_);
   }
-  if (options.zone_.enabled_) zbd_->GetZoneSnapshot(snapshot.zones_, options);
-  if (options.zone_file_.enabled_) {
+  if (options.zone_) {
+    zbd_->GetZoneSnapshot(snapshot.zones_);
+  }
+  if (options.zone_file_) {
     std::lock_guard<std::mutex> file_lock(files_mtx_);
-    for (auto& file_it : files_)
-      snapshot.zone_files_.emplace_back(*file_it.second, options);
+    for (const auto& file_it : files_) {
+      ZoneFile& file = *(file_it.second);
+      // file -> extents mapping
+      snapshot.zone_files_.emplace_back(file);
+      // extent -> file mapping
+      for (auto* ext : file.GetExtents()) {
+        snapshot.extents_.emplace_back(*ext, file.GetFilename());
+      }
+    }
   }
+
   if (options.trigger_report_) {
-    zbd_->GetMetrics()->ReportSnapshot(snapshot, options);
+    zbd_->GetMetrics()->ReportSnapshot(snapshot);
   }
 
   zbd_->LogGarbageInfo();

@@ -161,12 +161,10 @@ struct ZenFSMetricsSample : public ZenFSMetrics {
       } break;
     }
   }
-  virtual void ReportSnapshot(const ZenFSSnapshot& snapshot,
-                              const ZenFSSnapshotOptions& options) {
-    if (options.zbd_.get_free_space_) {
-      uint64_t free_space_gb = snapshot.zbd_.GetFreeSpace() >> 30;
-      ReportGeneral(ZENFS_LABEL(FREE_SPACE, SIZE), free_space_gb);
-    }
+
+  virtual void ReportSnapshot(const ZenFSSnapshot& snapshot) {
+    uint64_t free_space_gb = snapshot.zbd_.free_space >> 30;
+    ReportGeneral(ZENFS_LABEL(FREE_SPACE, SIZE), free_space_gb);
     // Report anything you care about.
   }
 
