@@ -28,19 +28,19 @@ jobs:
           path: harness/percona-context/percona-server/storage/rocksdb/rocksdb_plugins/zenfs
       - name: Run MTR RocksDB test
         id: mtrTest1
-        run: cd harness && st --silent -o logs/makeMtrRocksdb make NO_VAGRANT=1 RUN_ARGS="mtrRocksdbTest" results/zenfs-mtr.xml
+        run: cd harness && st --silent -o logs/makeMtrRocksdb -- disk-select --disk 1TB -- make NO_VAGRANT=1 RUN_ARGS="mtrRocksdbTest" results/zenfs-mtr.xml
         continue-on-error: true
       - name: Run MTR RocksDB replication test
         id: mtrTest2
-        run: cd harness && st --silent -o logs/makeMtrRocksdbReplication make NO_VAGRANT=1 RUN_ARGS="mtrRocksdbReplicationTest" results/zenfs-mtr.xml
+        run: cd harness && st --silent -o logs/makeMtrRocksdbReplication -- disk-select --disk 1TB --disk 1TB -- make NO_VAGRANT=1 RUN_ARGS="mtrRocksdbReplicationTest" results/zenfs-mtr.xml
         continue-on-error: true
       - name: Run MTR RocksDB parallel test
         id: mtrTest3
-        run: cd harness && st --silent -o logs/makeMtrRocksdbParallel make NO_VAGRANT=1 RUN_ARGS="mtrRocksdbParallelTest" results/zenfs-mtr.xml
+        run: cd harness && st --silent -o logs/makeMtrRocksdbParallel -- disk-select --disk 1TB --disk 1TB --disk 1TB --disk 1TB -- make NO_VAGRANT=1 RUN_ARGS="mtrRocksdbParallelTest" results/zenfs-mtr.xml
         continue-on-error: true
       - name: Run MTR RocksDB parallel replication test
         id: mtrTest4
-        run: cd harness && st --silent -o logs/makeMtrRocksdbParallelReplication make NO_VAGRANT=1 RUN_ARGS="mtrRocksdbParallelReplicationTest" results/zenfs-mtr.xml
+        run: cd harness && st --silent -o logs/makeMtrRocksdbParallelReplication -- disk-select --disk 1TB --disk 1TB --disk 1TB --disk 1TB -- make NO_VAGRANT=1 RUN_ARGS="mtrRocksdbParallelReplicationTest" results/zenfs-mtr.xml
         continue-on-error: true
       - name: Collect Results
         run: cd harness && make NO_VAGRANT=1 upload 
