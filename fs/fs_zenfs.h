@@ -372,8 +372,6 @@ class ZenFS : public FileSystemWrapper {
     return IOStatus::NotSupported("AreFilesSame is not supported in ZenFS");
   }
 
-  void GetZoneSnapshot(std::vector<ZoneSnapshot>& zones);
-  void GetZoneFileSnapshot(std::vector<ZoneFileSnapshot>& zone_files);
   void GetZenFSSnapshot(ZenFSSnapshot& snapshot,
                         const ZenFSSnapshotOptions& options);
 };

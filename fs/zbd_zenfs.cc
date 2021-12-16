@@ -859,9 +859,10 @@ void ZonedBlockDevice::SetZoneDeferredStatus(IOStatus status) {
   }
 }
 
-void ZonedBlockDevice::GetZoneSnapshot(std::vector<ZoneSnapshot> &snapshot,
-                                       const ZenFSSnapshotOptions &options) {
-  for (auto &zone : io_zones) snapshot.emplace_back(*zone, options);
+void ZonedBlockDevice::GetZoneSnapshot(std::vector<ZoneSnapshot> &snapshot) {
+  for (auto *zone : io_zones) {
+    snapshot.emplace_back(*zone);
+  }
 }
 
 }  // namespace ROCKSDB_NAMESPACE

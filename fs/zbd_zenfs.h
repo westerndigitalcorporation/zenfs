@@ -154,8 +154,7 @@ class ZonedBlockDevice {
 
   std::shared_ptr<ZenFSMetrics> GetMetrics() { return metrics_; }
 
-  void GetZoneSnapshot(std::vector<ZoneSnapshot> &snapshot,
-                       const ZenFSSnapshotOptions &options);
+  void GetZoneSnapshot(std::vector<ZoneSnapshot> &snapshot);
 
  private:
   std::string ErrorToString(int err);

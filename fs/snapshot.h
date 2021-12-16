@@ -14,145 +14,102 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-// These are three Snapshot classes to capture real-time information from ZenFS
-// for use by the upper layer algorithms. The three Snapshots will capture
-// information from Zone, ZoneFile, and ZoneExtent respectively. If you plan to
-// modify the variables of these three classes, please make sure that they have
-// a public interface for copying and that the interface of the Snapshot classes
-// are still logically correct after modification.
+// Indicate what stats info we want.
 struct ZenFSSnapshotOptions {
-  struct ZBDSnapshotOptions {
-    bool enabled_ = 1;
-    bool get_free_space_ = 1;
-    bool get_used_space_ = 1;
-    bool get_reclaimable_space_ = 1;
-  } zbd_;
-  struct ZoneSnapshotOptions {
-    bool enabled_ = 1;
-    bool write_position_ = 1;
-    bool start_position_ = 1;
-    bool id_ = 1;
-    bool remaining_capacity_ = 1;
-    bool used_capacity_ = 1;
-    bool max_capacity_ = 1;
-  } zone_;
-  struct ZoneFileSnapshotOptions {
-    bool enabled_ = 1;
-    bool id_ = 1;
-    bool filename_ = 1;
-  } zone_file_;
-  struct ZoneExtentSnapshotOptions {
-    bool enabled_ = 1;
-    bool start_ = 1;
-    bool length_ = 1;
-    bool zone_id_ = 1;
-  } zone_extent_;
+  // Global zoned device stats info
+  bool zbd_ = 0;
 
-  bool trigger_report_ = 1;
+  // Per zone stats info
+  bool zone_ = 0;
+
+  // Get all file->extents & extent->file mappings
+  bool zone_file_ = 0;
+
+  bool trigger_report_ = 0;
 
   bool as_lock_free_as_possible_ = 1;
 };
+
 class ZBDSnapshot {
- private:
-  uint64_t free_space_;
-  uint64_t used_space_;
-  uint64_t reclaimable_space_;
+ public:
+  uint64_t free_space;
+  uint64_t used_space;
+  uint64_t reclaimable_space;
 
  public:
   ZBDSnapshot() = default;
   ZBDSnapshot(const ZBDSnapshot&) = default;
-  ZBDSnapshot(ZonedBlockDevice& zbd, const ZenFSSnapshotOptions& options)
-      : free_space_(), used_space_(), reclaimable_space_() {
-    if (options.zbd_.enabled_) {
-      if (options.zbd_.get_free_space_) free_space_ = zbd.GetFreeSpace();
-      if (options.zbd_.get_used_space_) used_space_ = zbd.GetUsedSpace();
-      if (options.zbd_.get_reclaimable_space_)
-        reclaimable_space_ = zbd.GetReclaimableSpace();
-    }
-  }
-  uint64_t GetFreeSpace() const { return free_space_; }
-  uint64_t GetUsedSpace() const { return used_space_; }
-  uint64_t GetReclaimableSpace() const { return reclaimable_space_; }
+  ZBDSnapshot(ZonedBlockDevice& zbd)
+      : free_space(zbd.GetFreeSpace()),
+        used_space(zbd.GetUsedSpace()),
+        reclaimable_space(zbd.GetReclaimableSpace()) {}
 };
 
 class ZoneSnapshot {
- private:
-  uint64_t start_;
-  uint64_t wp_;
+ public:
+  uint64_t start;
+  uint64_t wp;
 
-  uint64_t capacity_;
-  uint64_t used_capacity_;
-  uint64_t max_capacity_;
+  uint64_t capacity;
+  uint64_t used_capacity;
+  uint64_t max_capacity;
 
  public:
-  ZoneSnapshot(const Zone& zone, const ZenFSSnapshotOptions& options)
-      : start_(), wp_(), capacity_(), used_capacity_(), max_capacity_() {
-    if (options.zone_.enabled_) {
-      if (options.zone_.id_ || options.zone_.write_position_) wp_ = zone.wp_;
-      if (options.zone_.remaining_capacity_) capacity_ = zone.capacity_;
-      if (options.zone_.used_capacity_) capacity_ = zone.used_capacity_;
-      if (options.zone_.max_capacity_) max_capacity_ = zone.max_capacity_;
-    }
-  }
-
-  uint64_t ID() const { return start_; }
-  uint64_t RemainingCapacity() const { return capacity_; }
-  uint64_t UsedCapacity() const { return used_capacity_; }
-  uint64_t MaxCapacity() const { return max_capacity_; }
-  uint64_t StartPosition() const { return start_; }
-  uint64_t WritePosition() const { return wp_; }
+  ZoneSnapshot(const Zone& zone)
+      : start(zone.start_),
+        wp(zone.wp_),
+        capacity(zone.capacity_),
+        used_capacity(zone.used_capacity_),
+        max_capacity(zone.max_capacity_) {}
 };
 
-struct ZoneExtentSnapshot {
- private:
-  uint64_t start_;
-  uint64_t length_;
-  uint64_t zone_start_;
+class ZoneExtentSnapshot {
+ public:
+  uint64_t start;
+  uint64_t length;
+  uint64_t zone_start;
+  std::string filename;
 
  public:
-  ZoneExtentSnapshot(const ZoneExtent& extent,
-                     const ZenFSSnapshotOptions& options)
-      : start_(), length_(), zone_start_() {
-    if (options.zone_extent_.enabled_) {
-      if (options.zone_extent_.start_) start_ = extent.start_;
-      if (options.zone_extent_.length_) length_ = extent.length_;
-      if (options.zone_extent_.zone_id_) zone_start_ = extent.zone_->start_;
-    }
-  }
-
-  uint64_t Start() const { return start_; }
-  uint64_t Length() const { return length_; }
-  uint64_t ZoneID() const { return zone_start_; }
+  ZoneExtentSnapshot(const ZoneExtent& extent, const std::string fname)
+      : start(extent.start_),
+        length(extent.length_),
+        zone_start(extent.zone_->start_),
+        filename(fname) {}
 };
 
-struct ZoneFileSnapshot {
- private:
-  uint64_t file_id_;
-  std::string filename_;
-  std::vector<ZoneExtentSnapshot> extent_;
+class ZoneFileSnapshot {
+ public:
+  uint64_t file_id;
+  std::string filename;
+  std::vector<ZoneExtentSnapshot> extents;
 
  public:
-  ZoneFileSnapshot(ZoneFile& file, const ZenFSSnapshotOptions& options)
-      : file_id_(), filename_(), extent_() {
-    if (options.zone_file_.enabled_) {
-      if (options.zone_file_.id_) file_id_ = file.GetID();
-      if (options.zone_file_.filename_) filename_ = file.GetFilename();
+  ZoneFileSnapshot(ZoneFile& file)
+      : file_id(file.GetID()), filename(file.GetFilename()) {
+    for (const auto* extent : file.GetExtents()) {
+      extents.emplace_back(*extent, filename);
     }
-    if (options.zone_extent_.enabled_)
-      for (ZoneExtent* const& extent : file.GetExtents())
-        extent_.emplace_back(*extent, options);
   }
-
-  uint64_t FileID() const { return file_id_; }
-  const std::string& Filename() const { return filename_; }
-  const std::vector<ZoneExtentSnapshot>& Extent() const { return extent_; }
 };
 
-struct ZenFSSnapshot {
+class ZenFSSnapshot {
+ public:
+  ZenFSSnapshot() {}
+
+  ZenFSSnapshot& operator=(ZenFSSnapshot&& snapshot) {
+    zbd_ = snapshot.zbd_;
+    zones_ = std::move(snapshot.zones_);
+    zone_files_ = std::move(snapshot.zone_files_);
+    extents_ = std::move(snapshot.extents_);
+    return *this;
+  }
+
  public:
   ZBDSnapshot zbd_;
   std::vector<ZoneSnapshot> zones_;
   std::vector<ZoneFileSnapshot> zone_files_;
+  std::vector<ZoneExtentSnapshot> extents_;
 };
 
 }  // namespace ROCKSDB_NAMESPACE
