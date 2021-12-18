@@ -238,12 +238,16 @@ IOStatus ZoneFile::CloseWR() {
 IOStatus ZoneFile::CloseActiveZone() {
   IOStatus s = IOStatus::OK();
   if (active_zone_) {
-    s = active_zone_->CloseWR();
+    bool full = active_zone_->IsFull();
+    s = active_zone_->Close();
     if (!s.ok()) {
       return s;
     }
     ReleaseActiveZone();
     zbd_->NotifyIOZoneClosed();
+    if (full) {
+      zbd_->NotifyIOZoneFull();
+    }
   }
   return s;
 }

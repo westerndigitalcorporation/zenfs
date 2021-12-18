@@ -71,8 +71,6 @@ class Zone {
 
   void EncodeJson(std::ostream &json_stream);
 
-  IOStatus CloseWR(); /* Done writing */
-
   inline IOStatus CheckRelease();
 };
 
