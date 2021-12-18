@@ -119,7 +119,8 @@ class ZonedBlockDevice {
 
   Zone *GetIOZone(uint64_t offset);
 
-  IOStatus AllocateZone(Env::WriteLifeTimeHint file_lifetime, Zone **out_zone);
+  IOStatus AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
+                          Zone **out_zone);
   IOStatus AllocateMetaZone(Zone **out_meta_zone);
 
   uint64_t GetFreeSpace();

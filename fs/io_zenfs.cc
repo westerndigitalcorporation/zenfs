@@ -382,7 +382,7 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
 
   if (!active_zone_) {
     Zone* zone = nullptr;
-    s = zbd_->AllocateZone(lifetime_, &zone);
+    s = zbd_->AllocateIOZone(lifetime_, &zone);
     if (!s.ok()) return s;
 
     if (!zone) {
@@ -405,7 +405,7 @@ IOStatus ZoneFile::Append(void* data, int data_size, int valid_size) {
       }
 
       Zone* zone = nullptr;
-      s = zbd_->AllocateZone(lifetime_, &zone);
+      s = zbd_->AllocateIOZone(lifetime_, &zone);
       if (!s.ok()) return s;
 
       if (!zone) {
