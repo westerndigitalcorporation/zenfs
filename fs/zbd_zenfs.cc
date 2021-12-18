@@ -65,16 +65,6 @@ bool Zone::IsFull() { return (capacity_ == 0); }
 bool Zone::IsEmpty() { return (wp_ == start_); }
 uint64_t Zone::GetZoneNr() { return start_ / zbd_->GetZoneSize(); }
 
-IOStatus Zone::CloseWR() {
-  assert(IsBusy());
-
-  IOStatus status = Close();
-
-  if (capacity_ == 0) zbd_->NotifyIOZoneFull();
-
-  return status;
-}
-
 void Zone::EncodeJson(std::ostream &json_stream) {
   json_stream << "{";
   json_stream << "\"start\":" << start_ << ",";
