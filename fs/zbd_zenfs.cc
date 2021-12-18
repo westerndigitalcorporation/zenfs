@@ -530,8 +530,8 @@ Status ZonedBlockDevice::ResetUnusedIOZones() {
   return Status::OK();
 }
 
-IOStatus ZonedBlockDevice::AllocateZone(Env::WriteLifeTimeHint file_lifetime,
-                                        Zone **out_zone) {
+IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
+                                          Zone **out_zone) {
   Zone *allocated_zone = nullptr;
   Zone *finish_victim = nullptr;
   unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
