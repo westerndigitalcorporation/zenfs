@@ -130,7 +130,7 @@ class ZonedBlockDevice {
   std::string GetFilename();
   uint32_t GetBlockSize();
 
-  Status ResetUnusedIOZones();
+  IOStatus ResetUnusedIOZones();
   void LogZoneStats();
   void LogZoneUsage();
   void LogGarbageInfo();
