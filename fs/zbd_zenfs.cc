@@ -516,15 +516,19 @@ IOStatus ZonedBlockDevice::AllocateMetaZone(Zone **out_meta_zone) {
 }
 
 IOStatus ZonedBlockDevice::ResetUnusedIOZones() {
-  /* Reset any unused zones */
   for (const auto z : io_zones) {
     if (z->Acquire()) {
-      if (!z->IsUsed() && !z->IsEmpty()) {
-        if (!z->IsFull()) active_io_zones_--;
-        if (!z->Reset().ok()) Warn(logger_, "Failed reseting zone");
+      if (!z->IsEmpty() && !z->IsUsed()) {
+        bool full = z->IsFull();
+        IOStatus reset_status = z->Reset();
+        IOStatus release_status = z->CheckRelease();
+        if (!reset_status.ok()) return reset_status;
+        if (!release_status.ok()) return release_status;
+        if (!full) active_io_zones_--;
+      } else {
+        IOStatus release_status = z->CheckRelease();
+        if (!release_status.ok()) return release_status;
       }
-      IOStatus status = z->CheckRelease();
-      if (!status.ok()) return status;
     }
   }
   return IOStatus::OK();
