@@ -515,7 +515,7 @@ IOStatus ZonedBlockDevice::AllocateMetaZone(Zone **out_meta_zone) {
   return IOStatus::NoSpace("Out of metadata zones");
 }
 
-Status ZonedBlockDevice::ResetUnusedIOZones() {
+IOStatus ZonedBlockDevice::ResetUnusedIOZones() {
   /* Reset any unused zones */
   for (const auto z : io_zones) {
     if (z->Acquire()) {
@@ -527,7 +527,7 @@ Status ZonedBlockDevice::ResetUnusedIOZones() {
       if (!status.ok()) return status;
     }
   }
-  return Status::OK();
+  return IOStatus::OK();
 }
 
 IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
@@ -555,6 +555,12 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
     return s;
   }
 
+  /* TODO: this should be done in context of deletes */
+  s = ResetUnusedIOZones();
+  if (!s.ok()) {
+    return s;
+  }
+
   io_zones_mtx.lock();
 
   /* Make sure we are below the zone open limit */
@@ -573,19 +579,6 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
     }
 
     if (z->IsEmpty() || (z->IsFull() && z->IsUsed())) {
-      IOStatus status = z->CheckRelease();
-      if (!status.ok()) return status;
-      continue;
-    }
-
-    if (!z->IsUsed()) {
-      if (!z->IsFull()) active_io_zones_--;
-      s = z->Reset();
-      if (!s.ok()) {
-        Debug(logger_, "Failed resetting zone !");
-        return s;
-      }
-
       IOStatus status = z->CheckRelease();
       if (!status.ok()) return status;
       continue;
