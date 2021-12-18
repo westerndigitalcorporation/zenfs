@@ -1024,7 +1024,7 @@ Status ZenFS::Mount(bool readonly) {
 
   if (!readonly) {
     Info(logger_, "Resetting unused IO Zones..");
-    Status status = zbd_->ResetUnusedIOZones();
+    IOStatus status = zbd_->ResetUnusedIOZones();
     if (!status.ok()) return status;
     Info(logger_, "  Done");
   }
@@ -1046,7 +1046,7 @@ Status ZenFS::MkFS(std::string aux_fs_path, uint32_t finish_threshold) {
   }
 
   ClearFiles();
-  Status status = zbd_->ResetUnusedIOZones();
+  IOStatus status = zbd_->ResetUnusedIOZones();
   if (!status.ok()) return status;
 
   for (const auto mz : metazones) {
