@@ -240,10 +240,10 @@ IOStatus ZoneFile::CloseActiveZone() {
   if (active_zone_) {
     bool full = active_zone_->IsFull();
     s = active_zone_->Close();
+    ReleaseActiveZone();
     if (!s.ok()) {
       return s;
     }
-    ReleaseActiveZone();
     zbd_->NotifyIOZoneClosed();
     if (full) {
       zbd_->NotifyIOZoneFull();
