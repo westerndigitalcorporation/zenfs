@@ -160,6 +160,7 @@ class ZonedBlockDevice {
  private:
   std::string ErrorToString(int err);
   IOStatus GetZoneDeferredStatus();
+  IOStatus ApplyFinishThreshold();
 };
 
 }  // namespace ROCKSDB_NAMESPACE

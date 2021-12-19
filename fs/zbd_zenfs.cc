@@ -534,6 +534,37 @@ IOStatus ZonedBlockDevice::ResetUnusedIOZones() {
   return IOStatus::OK();
 }
 
+IOStatus ZonedBlockDevice::ApplyFinishThreshold() {
+  IOStatus s;
+
+  if (finish_threshold_ == 0) return IOStatus::OK();
+
+  for (const auto z : io_zones) {
+    if (z->Acquire()) {
+      bool within_finish_threshold =
+          z->capacity_ < (z->max_capacity_ * finish_threshold_ / 100);
+      if (!(z->IsEmpty() || z->IsFull()) && within_finish_threshold) {
+        /* If there is less than finish_threshold_% remaining capacity in a
+         * non-open-zone, finish the zone */
+        s = z->Finish();
+        if (!s.ok()) {
+          z->Release();
+          Debug(logger_, "Failed finishing zone");
+          return s;
+        }
+        s = z->CheckRelease();
+        if (!s.ok()) return s;
+        active_io_zones_--;
+      } else {
+        s = z->CheckRelease();
+        if (!s.ok()) return s;
+      }
+    }
+  }
+
+  return IOStatus::OK();
+}
+
 IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
                                           Zone **out_zone) {
   Zone *allocated_zone = nullptr;
@@ -555,6 +586,12 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
 
   // Check if a deferred IO error was set
   s = GetZoneDeferredStatus();
+  if (!s.ok()) {
+    return s;
+  }
+
+  /* TODO: this should not be done for wal files */
+  s = ApplyFinishThreshold();
   if (!s.ok()) {
     return s;
   }
@@ -586,17 +623,6 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
       IOStatus status = z->CheckRelease();
       if (!status.ok()) return status;
       continue;
-    }
-
-    if ((z->capacity_ < (z->max_capacity_ * finish_threshold_ / 100))) {
-      /* If there is less than finish_threshold_% remaining capacity in a
-       * non-open-zone, finish the zone */
-      s = z->Finish();
-      if (!s.ok()) {
-        Debug(logger_, "Failed finishing zone");
-        return s;
-      }
-      active_io_zones_--;
     }
 
     if (!z->IsFull()) {
