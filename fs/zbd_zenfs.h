@@ -164,6 +164,7 @@ class ZonedBlockDevice {
   IOStatus FinishCheapestIOZone();
   IOStatus GetBestOpenZoneMatch(Env::WriteLifeTimeHint file_lifetime,
                                 unsigned int *best_diff_out, Zone **zone_out);
+  IOStatus AllocateEmptyZone(Zone **zone_out);
 };
 
 }  // namespace ROCKSDB_NAMESPACE
