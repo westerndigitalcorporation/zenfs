@@ -609,6 +609,45 @@ IOStatus ZonedBlockDevice::FinishCheapestIOZone() {
   return s;
 }
 
+IOStatus ZonedBlockDevice::GetBestOpenZoneMatch(
+    Env::WriteLifeTimeHint file_lifetime, unsigned int *best_diff_out,
+    Zone **zone_out) {
+  unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
+  Zone *allocated_zone = nullptr;
+  IOStatus s;
+
+  for (const auto z : io_zones) {
+    if (z->Acquire()) {
+      if ((z->used_capacity_ > 0) && !z->IsFull()) {
+        unsigned int diff = GetLifeTimeDiff(z->lifetime_, file_lifetime);
+        if (diff <= best_diff) {
+          if (allocated_zone != nullptr) {
+            s = allocated_zone->CheckRelease();
+            if (!s.ok()) {
+              IOStatus s_ = z->CheckRelease();
+              if (!s_.ok()) return s_;
+              return s;
+            }
+          }
+          allocated_zone = z;
+          best_diff = diff;
+        } else {
+          s = z->CheckRelease();
+          if (!s.ok()) return s;
+        }
+      } else {
+        s = z->CheckRelease();
+        if (!s.ok()) return s;
+      }
+    }
+  }
+
+  *best_diff_out = best_diff;
+  *zone_out = allocated_zone;
+
+  return IOStatus::OK();
+}
+
 IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
                                           Zone **out_zone) {
   Zone *allocated_zone = nullptr;
@@ -657,26 +696,9 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
   }
 
   /* Try to fill an already open zone(with the best life time diff) */
-  for (const auto z : io_zones) {
-    if (z->Acquire()) {
-      if ((z->used_capacity_ > 0) && !z->IsFull()) {
-        unsigned int diff = GetLifeTimeDiff(z->lifetime_, file_lifetime);
-        if (diff <= best_diff) {
-          if (allocated_zone != nullptr) {
-            IOStatus status = allocated_zone->CheckRelease();
-            if (!status.ok()) return status;
-          }
-          allocated_zone = z;
-          best_diff = diff;
-        } else {
-          IOStatus status = z->CheckRelease();
-          if (!status.ok()) return status;
-        }
-      } else {
-        IOStatus status = z->CheckRelease();
-        if (!status.ok()) return status;
-      }
-    }
+  s = GetBestOpenZoneMatch(file_lifetime, &best_diff, &allocated_zone);
+  if (!s.ok()) {
+    return s;
   }
 
   // Holding allocated_zone if != nullptr
