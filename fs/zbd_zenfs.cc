@@ -710,8 +710,6 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
       Env::Default());
   metrics_->ReportQPS(ZENFS_LABEL(IO_ALLOC, QPS), 1);
 
-  *out_zone = nullptr;
-
   // Check if a deferred IO error was set
   s = GetZoneDeferredStatus();
   if (!s.ok()) {
