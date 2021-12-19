@@ -244,9 +244,9 @@ IOStatus ZoneFile::CloseActiveZone() {
     if (!s.ok()) {
       return s;
     }
-    zbd_->NotifyIOZoneClosed();
+    zbd_->PutOpenIOZoneToken();
     if (full) {
-      zbd_->NotifyIOZoneFull();
+      zbd_->PutActiveIOZoneToken();
     }
   }
   return s;

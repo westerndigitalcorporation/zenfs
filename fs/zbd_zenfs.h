@@ -145,8 +145,8 @@ class ZonedBlockDevice {
 
   void SetFinishTreshold(uint32_t threshold) { finish_threshold_ = threshold; }
 
-  void NotifyIOZoneFull();
-  void NotifyIOZoneClosed();
+  void PutOpenIOZoneToken();
+  void PutActiveIOZoneToken();
 
   void EncodeJson(std::ostream &json_stream);
 
@@ -160,6 +160,8 @@ class ZonedBlockDevice {
  private:
   std::string ErrorToString(int err);
   IOStatus GetZoneDeferredStatus();
+  bool GetActiveIOZoneTokenIfAvailable();
+  void WaitForOpenIOZoneToken();
   IOStatus ApplyFinishThreshold();
   IOStatus FinishCheapestIOZone();
   IOStatus GetBestOpenZoneMatch(Env::WriteLifeTimeHint file_lifetime,
