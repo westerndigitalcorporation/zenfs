@@ -648,14 +648,31 @@ IOStatus ZonedBlockDevice::GetBestOpenZoneMatch(
   return IOStatus::OK();
 }
 
+IOStatus ZonedBlockDevice::AllocateEmptyZone(Zone **zone_out) {
+  IOStatus s;
+  Zone *allocated_zone = nullptr;
+  for (const auto z : io_zones) {
+    if (z->Acquire()) {
+      if (z->IsEmpty()) {
+        allocated_zone = z;
+        active_io_zones_++;
+        break;
+      } else {
+        s = z->CheckRelease();
+        if (!s.ok()) return s;
+      }
+    }
+  }
+  *zone_out = allocated_zone;
+  return IOStatus::OK();
+}
+
 IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
                                           Zone **out_zone) {
   Zone *allocated_zone = nullptr;
   unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
   int new_zone = 0;
   IOStatus s;
-  bool ok = false;
-  (void)ok;
   ZenFSMetricsLatencyGuard guard(
       metrics_,
       IOType::kUnknown == IOType::kWAL
@@ -715,31 +732,30 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
       }
     }
 
-    if (active_io_zones_.load() < max_nr_active_io_zones_) {
-      for (const auto z : io_zones) {
-        if (z->Acquire()) {
-          if (z->IsEmpty()) {
-            z->lifetime_ = file_lifetime;
-            if (allocated_zone != nullptr) {
-              IOStatus status = allocated_zone->CheckRelease();
-              if (!status.ok()) return status;
-            }
-            allocated_zone = z;
-            active_io_zones_++;
-            new_zone = 1;
-            break;
-          } else {
-            IOStatus status = z->CheckRelease();
-            if (!status.ok()) return status;
-          }
+    Zone *tmp_zone;
+    s = AllocateEmptyZone(&tmp_zone);
+    if (!s.ok()) {
+      return s;
+    }
+
+    if (tmp_zone != nullptr) {
+      if (allocated_zone != nullptr) {
+        s = allocated_zone->CheckRelease();
+        if (!s.ok()) {
+          return s;
         }
+        allocated_zone = nullptr;
       }
+
+      allocated_zone = tmp_zone;
+      assert(allocated_zone->IsBusy());
+      allocated_zone->lifetime_ = file_lifetime;
+      new_zone = true;
     }
   }
 
   if (allocated_zone) {
-    ok = allocated_zone->IsBusy();
-    assert(ok);
+    assert(allocated_zone->IsBusy());
     open_io_zones_++;
     Debug(logger_,
           "Allocating zone(new=%d) start: 0x%lx wp: 0x%lx lt: %d file lt: %d\n",
