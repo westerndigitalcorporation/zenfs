@@ -81,7 +81,6 @@ class ZonedBlockDevice {
   uint64_t zone_sz_;
   uint32_t nr_zones_;
   std::vector<Zone *> io_zones;
-  std::mutex io_zones_mtx;
   std::vector<Zone *> meta_zones;
   int read_f_;
   int read_direct_f_;

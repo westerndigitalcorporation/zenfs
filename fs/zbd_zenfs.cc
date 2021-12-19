@@ -372,7 +372,6 @@ void ZonedBlockDevice::LogZoneStats() {
   uint64_t reclaimable_capacity = 0;
   uint64_t reclaimables_max_capacity = 0;
   uint64_t active = 0;
-  io_zones_mtx.lock();
 
   for (const auto z : io_zones) {
     used_capacity += z->used_capacity_;
@@ -394,8 +393,6 @@ void ZonedBlockDevice::LogZoneStats() {
        time(NULL) - start_time_, used_capacity / MB, reclaimable_capacity / MB,
        100 * reclaimable_capacity / reclaimables_max_capacity, active,
        active_io_zones_.load(), open_io_zones_.load());
-
-  io_zones_mtx.unlock();
 }
 
 void ZonedBlockDevice::LogZoneUsage() {
@@ -733,8 +730,6 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
     return s;
   }
 
-  io_zones_mtx.lock();
-
   WaitForOpenIOZoneToken();
 
   /* Try to fill an already open zone(with the best life time diff) */
@@ -801,9 +796,7 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
     PutOpenIOZoneToken();
   }
 
-  io_zones_mtx.unlock();
   LogZoneStats();
-
   *out_zone = allocated_zone;
 
   metrics_->ReportGeneral(ZENFS_LABEL(OPEN_ZONES, COUNT), open_io_zones_);
