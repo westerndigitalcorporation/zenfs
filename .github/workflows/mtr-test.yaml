@@ -30,20 +30,29 @@ jobs:
         id: mtrTest1
         run: cd harness && st --silent -o logs/makeMtrRocksdb -- disk-select --disk 1TB -- make NO_VAGRANT=1 RUN_ARGS="mtrRocksdbTest" results/zenfs-mtr.xml
         continue-on-error: true
+      - name: Collect MTR RocksDB results
+        run: cd harness && make NO_VAGRANT=1 upload
+        if: always()
       - name: Run MTR RocksDB replication test
         id: mtrTest2
         run: cd harness && st --silent -o logs/makeMtrRocksdbReplication -- disk-select --disk 1TB --disk 1TB -- make NO_VAGRANT=1 RUN_ARGS="mtrRocksdbReplicationTest" results/zenfs-mtr.xml
         continue-on-error: true
+      - name: Collect MTR RocksDB replication results
+        run: cd harness && make NO_VAGRANT=1 upload
+        if: always()
       - name: Run MTR RocksDB parallel test
         id: mtrTest3
         run: cd harness && st --silent -o logs/makeMtrRocksdbParallel -- disk-select --disk 1TB --disk 1TB --disk 1TB --disk 1TB -- make NO_VAGRANT=1 RUN_ARGS="mtrRocksdbParallelTest" results/zenfs-mtr.xml
         continue-on-error: true
+      - name: Collect MTR RocksDB parallel results
+        run: cd harness && make NO_VAGRANT=1 upload
+        if: always()
       - name: Run MTR RocksDB parallel replication test
         id: mtrTest4
         run: cd harness && st --silent -o logs/makeMtrRocksdbParallelReplication -- disk-select --disk 1TB --disk 1TB --disk 1TB --disk 1TB -- make NO_VAGRANT=1 RUN_ARGS="mtrRocksdbParallelReplicationTest" results/zenfs-mtr.xml
         continue-on-error: true
-      - name: Collect Results
-        run: cd harness && make NO_VAGRANT=1 upload 
+      - name: Collect MTR RocksDB parallel replication results
+        run: cd harness && make NO_VAGRANT=1 upload
         if: always()
       - name: Remove docker images
         run: docker image prune --force
