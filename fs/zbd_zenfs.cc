@@ -220,6 +220,9 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   Status s;
   uint64_t i = 0;
   uint64_t m = 0;
+  // Reserve one zone for metazone allocation, may add more for other
+  // tasks in the future.
+  int reserved_zones = 1;
   int ret;
 
   if (!readonly && !exclusive)
@@ -276,12 +279,12 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   if (info.max_nr_active_zones == 0)
     max_nr_active_io_zones_ = info.nr_zones;
   else
-    max_nr_active_io_zones_ = info.max_nr_active_zones - 1;
+    max_nr_active_io_zones_ = info.max_nr_active_zones - reserved_zones;
 
   if (info.max_nr_open_zones == 0)
     max_nr_open_io_zones_ = info.nr_zones;
   else
-    max_nr_open_io_zones_ = info.max_nr_open_zones - 1;
+    max_nr_open_io_zones_ = info.max_nr_open_zones - reserved_zones;
 
   Info(logger_, "Zone block device nr zones: %u max active: %u max open: %u \n",
        info.nr_zones, info.max_nr_active_zones, info.max_nr_open_zones);
@@ -633,7 +636,8 @@ IOStatus ZonedBlockDevice::FinishCheapestIOZone() {
   }
 
   if (finish_victim == nullptr) {
-    return IOStatus::IOError("Failed to find a zone to finish");
+    Info(logger_, "All non-busy zones are empty or full, skip.");
+    return IOStatus::OK();
   }
 
   s = finish_victim->Finish();
