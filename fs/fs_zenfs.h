@@ -13,6 +13,7 @@
 #include "rocksdb/env.h"
 #include "rocksdb/file_system.h"
 #include "rocksdb/status.h"
+#include "snapshot.h"
 #include "version.h"
 #include "zbd_zenfs.h"
 
@@ -148,6 +149,7 @@ class ZenFS : public FileSystemWrapper {
     kFileUpdate = 2,
     kFileDeletion = 3,
     kEndRecord = 4,
+    kFileReplace = 5,
   };
 
   void LogFiles();
@@ -157,9 +159,12 @@ class ZenFS : public FileSystemWrapper {
   IOStatus RollMetaZoneLocked();
   IOStatus PersistSnapshot(ZenMetaLog* meta_writer);
   IOStatus PersistRecord(std::string record);
-  IOStatus SyncFileMetadata(ZoneFile* zoneFile);
-  IOStatus SyncFileMetadata(std::shared_ptr<ZoneFile> zoneFile) {
-    return SyncFileMetadata(zoneFile.get());
+  IOStatus SyncFileExtents(ZoneFile* zoneFile,
+                           std::vector<ZoneExtent*> new_extents);
+  IOStatus SyncFileMetadata(ZoneFile* zoneFile, bool replace = false);
+  IOStatus SyncFileMetadata(std::shared_ptr<ZoneFile> zoneFile,
+                            bool replace = false) {
+    return SyncFileMetadata(zoneFile.get(), replace);
   }
 
   void EncodeSnapshotTo(std::string* output);
@@ -167,7 +172,7 @@ class ZenFS : public FileSystemWrapper {
                             std::string* output);
 
   Status DecodeSnapshotFrom(Slice* input);
-  Status DecodeFileUpdateFrom(Slice* slice);
+  Status DecodeFileUpdateFrom(Slice* slice, bool replace = false);
   Status DecodeFileDeletionFrom(Slice* slice);
 
   Status RecoverFrom(ZenMetaLog* log);
@@ -380,6 +385,12 @@ class ZenFS : public FileSystemWrapper {
 
   void GetZenFSSnapshot(ZenFSSnapshot& snapshot,
                         const ZenFSSnapshotOptions& options);
+
+  IOStatus MigrateExtents(const std::vector<ZoneExtentSnapshot*>& extents);
+
+  IOStatus MigrateFileExtents(
+      const std::string& fname,
+      const std::vector<ZoneExtentSnapshot*>& migrate_exts);
 };
 #endif  // !defined(ROCKSDB_LITE) && defined(OS_LINUX)
 

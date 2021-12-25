@@ -148,7 +148,9 @@ IOStatus Zone::Append(char *data, uint32_t size) {
 
   while (left) {
     ret = pwrite(fd, ptr, size, wp_);
-    if (ret < 0) return IOStatus::IOError("Write failed");
+    if (ret < 0) {
+      return IOStatus::IOError(strerror(errno));
+    }
 
     ptr += ret;
     wp_ += ret;
@@ -225,9 +227,8 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   Status s;
   uint64_t i = 0;
   uint64_t m = 0;
-  // Reserve one zone for metazone allocation, may add more for other
-  // tasks in the future.
-  int reserved_zones = 1;
+  // Reserve one zone for metadata and another one for extent migration
+  int reserved_zones = 2;
   int ret;
 
   if (!readonly && !exclusive)
@@ -279,8 +280,6 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   zone_sz_ = info.zone_size;
   nr_zones_ = info.nr_zones;
 
-  /* We need one open zone for meta data writes, the rest can be used for files
-   */
   if (info.max_nr_active_zones == 0)
     max_nr_active_io_zones_ = info.nr_zones;
   else
@@ -426,16 +425,22 @@ void ZonedBlockDevice::LogGarbageInfo() {
   // the result to be precise.
   int zone_gc_stat[12] = {0};
   for (auto z : io_zones) {
-    // Calculate garbage percent
     if (z->IsEmpty()) {
       zone_gc_stat[0]++;
       continue;
     }
+
+    if (!z->Acquire()) {
+      continue;
+    }
+
     double garbage_rate =
         double(z->wp_ - z->start_ - z->used_capacity_) / z->max_capacity_;
-    // Find appropriate vector index that represet current garbage percent.
+    assert(garbage_rate > 0);
     int idx = int((garbage_rate + 0.1) * 10);
     zone_gc_stat[idx]++;
+
+    z->Release();
   }
 
   std::stringstream ss;
@@ -640,6 +645,7 @@ IOStatus ZonedBlockDevice::FinishCheapestIOZone() {
     }
   }
 
+  // If all non-busy zones are empty or full, we should return success.
   if (finish_victim == nullptr) {
     Info(logger_, "All non-busy zones are empty or full, skip.");
     return IOStatus::OK();
@@ -661,14 +667,15 @@ IOStatus ZonedBlockDevice::FinishCheapestIOZone() {
 
 IOStatus ZonedBlockDevice::GetBestOpenZoneMatch(
     Env::WriteLifeTimeHint file_lifetime, unsigned int *best_diff_out,
-    Zone **zone_out) {
+    Zone **zone_out, uint32_t min_capacity) {
   unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
   Zone *allocated_zone = nullptr;
   IOStatus s;
 
   for (const auto z : io_zones) {
     if (z->Acquire()) {
-      if ((z->used_capacity_ > 0) && !z->IsFull()) {
+      if ((z->used_capacity_ > 0) && !z->IsFull() &&
+          z->capacity_ >= min_capacity) {
         unsigned int diff = GetLifeTimeDiff(z->lifetime_, file_lifetime);
         if (diff <= best_diff) {
           if (allocated_zone != nullptr) {
@@ -714,6 +721,60 @@ IOStatus ZonedBlockDevice::AllocateEmptyZone(Zone **zone_out) {
   }
   *zone_out = allocated_zone;
   return IOStatus::OK();
+}
+
+int ZonedBlockDevice::DirectRead(char *buf, uint64_t offset, int n) {
+  int ret = 0;
+  int r = -1;
+  int f = GetReadDirectFD();
+
+  while (ret < n) {
+    r = pread(f, buf, n, offset);
+    if (r <= 0) {
+      if (r == -1 && errno == EINTR) {
+        continue;
+      }
+      break;
+    }
+    ret += r;
+  }
+
+  if (r < 0) return r;
+  return ret;
+}
+
+IOStatus ZonedBlockDevice::ReleaseMigrateZone(Zone *zone) {
+  IOStatus s = IOStatus::OK();
+  {
+    std::unique_lock<std::mutex> lock(migrate_zone_mtx_);
+    migrating_ = false;
+    if (zone != nullptr) {
+      s = zone->CheckRelease();
+      Info(logger_, "ReleaseMigrateZone: %lu", zone->start_);
+    }
+  }
+  migrate_resource_.notify_one();
+  return s;
+}
+
+IOStatus ZonedBlockDevice::TakeMigrateZone(Zone **out_zone,
+                                           Env::WriteLifeTimeHint file_lifetime,
+                                           uint32_t min_capacity) {
+  std::unique_lock<std::mutex> lock(migrate_zone_mtx_);
+  migrate_resource_.wait(lock, [this] { return !migrating_; });
+
+  migrating_ = true;
+
+  unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
+  auto s =
+      GetBestOpenZoneMatch(file_lifetime, &best_diff, out_zone, min_capacity);
+  if (s.ok() && (*out_zone) != nullptr) {
+    Info(logger_, "TakeMigrateZone: %lu", (*out_zone)->start_);
+  } else {
+    migrating_ = false;
+  }
+
+  return s;
 }
 
 IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
