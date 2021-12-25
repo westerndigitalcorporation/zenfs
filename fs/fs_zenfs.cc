@@ -407,15 +407,52 @@ IOStatus ZenFS::PersistRecord(std::string record) {
   return s;
 }
 
-IOStatus ZenFS::SyncFileMetadata(ZoneFile* zoneFile) {
+IOStatus ZenFS::SyncFileExtents(ZoneFile* zoneFile,
+                                std::vector<ZoneExtent*> new_extents) {
+  IOStatus s;
+
+  std::vector<ZoneExtent*> old_extents = zoneFile->GetExtents();
+  zoneFile->ReplaceExtentList(new_extents);
+  zoneFile->MetadataUnsynced();
+  s = SyncFileMetadata(zoneFile, true);
+
+  if (!s.ok()) {
+    return s;
+  }
+
+  // Clear changed extents' zone stats
+  for (size_t i = 0; i < new_extents.size(); ++i) {
+    ZoneExtent* old_ext = old_extents[i];
+    if (old_ext->start_ != new_extents[i]->start_) {
+      old_ext->zone_->used_capacity_ -= old_ext->length_;
+    }
+    delete old_ext;
+  }
+
+  return IOStatus::OK();
+}
+
+IOStatus ZenFS::SyncFileMetadata(ZoneFile* zoneFile, bool replace) {
   std::string fileRecord;
   std::string output;
   IOStatus s;
   ZenFSMetricsLatencyGuard guard(
       zbd_->GetMetrics(), ZENFS_LABEL(META_SYNC, LATENCY), Env::Default());
+
   std::lock_guard<std::mutex> lock(files_mtx_);
-  zoneFile->SetFileModificationTime(time(0));
-  PutFixed32(&output, kFileUpdate);
+
+  if (GetFileInternal(zoneFile->GetFilename()) == nullptr) {
+    Info(logger_, "File %s doesn't exist, skip sync file metadata!",
+         zoneFile->GetFilename().data());
+    return IOStatus::OK();
+  }
+
+  if (replace) {
+    PutFixed32(&output, kFileReplace);
+  } else {
+    zoneFile->SetFileModificationTime(time(0));
+    PutFixed32(&output, kFileUpdate);
+  }
   zoneFile->EncodeUpdateTo(&fileRecord);
   PutLengthPrefixedSlice(&output, Slice(fileRecord));
 
@@ -787,7 +824,7 @@ void ZenFS::EncodeJson(std::ostream& json_stream) {
   json_stream << "]";
 }
 
-Status ZenFS::DecodeFileUpdateFrom(Slice* slice) {
+Status ZenFS::DecodeFileUpdateFrom(Slice* slice, bool replace) {
   std::shared_ptr<ZoneFile> update(new ZoneFile(zbd_, "not_set", 0));
   uint64_t id;
   Status s;
@@ -798,13 +835,13 @@ Status ZenFS::DecodeFileUpdateFrom(Slice* slice) {
   id = update->GetID();
   if (id >= next_file_id_) next_file_id_ = id + 1;
 
-  /* Check if this is an update to an existing file */
+  /* Check if this is an update or an replace to an existing file */
   for (auto it = files_.begin(); it != files_.end(); it++) {
     std::shared_ptr<ZoneFile> zFile = it->second;
     if (id == zFile->GetID()) {
       std::string oldName = zFile->GetFilename();
 
-      s = zFile->MergeUpdate(update);
+      s = zFile->MergeUpdate(update, replace);
       update.reset();
 
       if (!s.ok()) return s;
@@ -918,6 +955,15 @@ Status ZenFS::RecoverFrom(ZenMetaLog* log) {
 
       case kFileUpdate:
         s = DecodeFileUpdateFrom(&data);
+        if (!s.ok()) {
+          Warn(logger_, "Could not decode file snapshot: %s",
+               s.ToString().c_str());
+          return s;
+        }
+        break;
+
+      case kFileReplace:
+        s = DecodeFileUpdateFrom(&data, true);
         if (!s.ok()) {
           Warn(logger_, "Could not decode file snapshot: %s",
                s.ToString().c_str());
@@ -1304,7 +1350,112 @@ void ZenFS::GetZenFSSnapshot(ZenFSSnapshot& snapshot,
     zbd_->GetMetrics()->ReportSnapshot(snapshot);
   }
 
-  zbd_->LogGarbageInfo();
+  if (options.log_garbage_) {
+    zbd_->LogGarbageInfo();
+  }
+}
+
+IOStatus ZenFS::MigrateExtents(
+    const std::vector<ZoneExtentSnapshot*>& extents) {
+  IOStatus s;
+  // Group extents by their filename
+  std::map<std::string, std::vector<ZoneExtentSnapshot*>> file_extents;
+  for (auto* ext : extents) {
+    std::string fname = ext->filename;
+    // We only migrate SST file extents
+    if (ends_with(fname, ".sst")) {
+      file_extents[fname].emplace_back(ext);
+    }
+  }
+
+  for (const auto& it : file_extents) {
+    s = MigrateFileExtents(it.first, it.second);
+    if (!s.ok()) break;
+    s = zbd_->ResetUnusedIOZones();
+    if (!s.ok()) break;
+  }
+  return s;
+}
+
+IOStatus ZenFS::MigrateFileExtents(
+    const std::string& fname,
+    const std::vector<ZoneExtentSnapshot*>& migrate_exts) {
+  IOStatus s = IOStatus::OK();
+  Info(logger_, "MigrateFileExtents, fname: %s, extent count: %lu",
+       fname.data(), migrate_exts.size());
+  // The file may be deleted by other threads, better double check.
+  auto zfile = GetFile(fname);
+  if (zfile == nullptr || zfile->IsOpenForWR()) {
+    return IOStatus::OK();
+  }
+
+  std::vector<ZoneExtent*> new_extent_list;
+  std::vector<ZoneExtent*> extents = zfile->GetExtents();
+  for (const auto* ext : extents) {
+    new_extent_list.push_back(
+        new ZoneExtent(ext->start_, ext->length_, ext->zone_));
+  }
+
+  // Modify the new extent list
+  for (ZoneExtent* ext : new_extent_list) {
+    // Check if current extent need to be migrated
+    auto it = std::find_if(migrate_exts.begin(), migrate_exts.end(),
+                           [&](const ZoneExtentSnapshot* ext_snapshot) {
+                             return ext_snapshot->start == ext->start_ &&
+                                    ext_snapshot->length == ext->length_;
+                           });
+
+    if (it == migrate_exts.end()) {
+      Info(logger_, "Migrate extent not found, ext_start: %lu", ext->start_);
+      continue;
+    }
+
+    Zone* target_zone = nullptr;
+
+    // Allocate a new migration zone.
+    s = zbd_->TakeMigrateZone(&target_zone, zfile->GetWriteLifeTimeHint(),
+                              ext->length_);
+    if (!s.ok()) {
+      continue;
+    }
+
+    if (target_zone == nullptr) {
+      zbd_->ReleaseMigrateZone(target_zone);
+      Info(logger_, "Migrate Zone Acquire Failed, Ignore Task.");
+      continue;
+    }
+
+    uint64_t target_start = target_zone->wp_;
+    if (zfile->IsSparse()) {
+      // For buffered write, ZenFS use inlined metadata for extents and each
+      // extent has a SPARSE_HEADER_SIZE.
+      target_start = target_zone->wp_ + ZoneFile::SPARSE_HEADER_SIZE;
+      zfile->MigrateData(ext->start_ - ZoneFile::SPARSE_HEADER_SIZE,
+                         ext->length_ + ZoneFile::SPARSE_HEADER_SIZE,
+                         target_zone);
+    } else {
+      zfile->MigrateData(ext->start_, ext->length_, target_zone);
+    }
+
+    // If the file doesn't exist, skip
+    if (GetFileInternal(fname) == nullptr) {
+      Info(logger_, "Migrate file not exist anymore.");
+      zbd_->ReleaseMigrateZone(target_zone);
+      break;
+    }
+
+    ext->start_ = target_start;
+    ext->zone_ = target_zone;
+    ext->zone_->used_capacity_ += ext->length_;
+
+    zbd_->ReleaseMigrateZone(target_zone);
+  }
+
+  SyncFileExtents(zfile.get(), new_extent_list);
+
+  Info(logger_, "MigrateFileExtents Finished, fname: %s, extent count: %lu",
+       fname.data(), migrate_exts.size());
+  return IOStatus::OK();
 }
 
 extern "C" FactoryFunc<FileSystem> zenfs_filesystem_reg;

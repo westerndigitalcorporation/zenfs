@@ -18,15 +18,12 @@ namespace ROCKSDB_NAMESPACE {
 struct ZenFSSnapshotOptions {
   // Global zoned device stats info
   bool zbd_ = 0;
-
   // Per zone stats info
   bool zone_ = 0;
-
   // Get all file->extents & extent->file mappings
   bool zone_file_ = 0;
-
   bool trigger_report_ = 0;
-
+  bool log_garbage_ = 0;
   bool as_lock_free_as_possible_ = 1;
 };
 
