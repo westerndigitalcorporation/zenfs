@@ -1144,6 +1144,7 @@ std::map<std::string, Env::WriteLifeTimeHint> ZenFS::GetWriteLifeTimeHints() {
   return hint_map;
 }
 
+#if !defined(NDEBUG) || defined(WITH_TERARKDB)
 static std::string GetLogFilename(std::string bdev) {
   std::ostringstream ss;
   time_t t = time(0);
@@ -1155,6 +1156,7 @@ static std::string GetLogFilename(std::string bdev) {
 
   return ss.str();
 }
+#endif
 
 Status NewZenFS(FileSystem** fs, const std::string& bdevname,
                 std::shared_ptr<ZenFSMetrics> metrics) {
@@ -1166,7 +1168,7 @@ Status NewZenFS(FileSystem** fs, const std::string& bdevname,
   //
   // TODO(guokuankuan@bytedance.com) We need to figure out how to reuse
   // RocksDB's logger in the future.
-#if defined(NDEBUG) || defined(WITH_TERARKDB)
+#if !defined(NDEBUG) || defined(WITH_TERARKDB)
   s = Env::Default()->NewLogger(GetLogFilename(bdevname), &logger);
   if (!s.ok()) {
     fprintf(stderr, "ZenFS: Could not create logger");
