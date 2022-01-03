@@ -517,44 +517,10 @@ IOStatus ZenFS::NewWritableFile(const std::string& fname,
                                 const FileOptions& file_opts,
                                 std::unique_ptr<FSWritableFile>* result,
                                 IODebugContext* /*dbg*/) {
-  IOStatus s;
-
   Debug(logger_, "New writable file: %s direct: %d\n", fname.c_str(),
         file_opts.use_direct_writes);
 
-  if (GetFile(fname) != nullptr) {
-    s = DeleteFile(fname);
-    if (!s.ok()) return s;
-  }
-
-  std::shared_ptr<ZoneFile> zoneFile(
-      new ZoneFile(zbd_, fname, next_file_id_++));
-  zoneFile->SetFileModificationTime(time(0));
-
-  /* RocksDB does not set the right io type(!)*/
-  if (ends_with(fname, ".log")) {
-    zoneFile->SetIOType(IOType::kWAL);
-  } else {
-    zoneFile->SetIOType(IOType::kUnknown);
-  }
-
-  zoneFile->SetSparse(!file_opts.use_direct_writes);
-
-  /* Persist the creation of the file */
-  s = SyncFileMetadata(zoneFile);
-  if (!s.ok()) {
-    zoneFile.reset();
-    return s;
-  }
-
-  files_mtx_.lock();
-  files_.insert(std::make_pair(fname.c_str(), zoneFile));
-  files_mtx_.unlock();
-
-  result->reset(new ZonedWritableFile(zbd_, !file_opts.use_direct_writes,
-                                      zoneFile, &metadata_writer_));
-
-  return s;
+  return OpenWritableFile(fname, file_opts, result, nullptr, false);
 }
 
 IOStatus ZenFS::ReuseWritableFile(const std::string& fname,
@@ -582,16 +548,16 @@ IOStatus ZenFS::FileExists(const std::string& fname, const IOOptions& options,
   }
 }
 
+/* If the file does not exist, create a new one,
+ * else return the existing file
+ */
 IOStatus ZenFS::ReopenWritableFile(const std::string& fname,
-                                   const FileOptions& options,
+                                   const FileOptions& file_opts,
                                    std::unique_ptr<FSWritableFile>* result,
                                    IODebugContext* dbg) {
   Debug(logger_, "Reopen writable file: %s \n", fname.c_str());
 
-  if (GetFile(fname) != nullptr)
-    return NewWritableFile(fname, options, result, dbg);
-
-  return target()->NewWritableFile(fname, options, result, dbg);
+  return OpenWritableFile(fname, file_opts, result, dbg, true);
 }
 
 IOStatus ZenFS::GetChildren(const std::string& dir, const IOOptions& options,
@@ -633,6 +599,53 @@ IOStatus ZenFS::GetChildren(const std::string& dir, const IOOptions& options,
       }
     }
   }
+
+  return s;
+}
+
+IOStatus ZenFS::OpenWritableFile(const std::string& fname,
+                                 const FileOptions& file_opts,
+                                 std::unique_ptr<FSWritableFile>* result,
+                                 IODebugContext* /*dbg*/, bool reopen) {
+  IOStatus s;
+  std::shared_ptr<ZoneFile> zoneFile = GetFile(fname);
+
+  /* if reopen is true and the file exists, return it */
+  if (reopen && zoneFile != nullptr) {
+    result->reset(new ZonedWritableFile(zbd_, !file_opts.use_direct_writes,
+                                        zoneFile, &metadata_writer_));
+    return IOStatus::OK();
+  }
+
+  if (zoneFile != nullptr) {
+    s = DeleteFile(fname);
+    if (!s.ok()) return s;
+  }
+
+  zoneFile = std::make_shared<ZoneFile>(zbd_, fname, next_file_id_++);
+  zoneFile->SetFileModificationTime(time(0));
+
+  /* RocksDB does not set the right io type(!)*/
+  if (ends_with(fname, ".log")) {
+    zoneFile->SetIOType(IOType::kWAL);
+  } else {
+    zoneFile->SetIOType(IOType::kUnknown);
+  }
+
+  zoneFile->SetSparse(!file_opts.use_direct_writes);
+
+  /* Persist the creation of the file */
+  s = SyncFileMetadata(zoneFile);
+  if (!s.ok()) {
+    zoneFile.reset();
+    return s;
+  }
+
+  std::lock_guard<std::mutex> file_lock(files_mtx_);
+  files_.insert(std::make_pair(fname.c_str(), zoneFile));
+
+  result->reset(new ZonedWritableFile(zbd_, !file_opts.use_direct_writes,
+                                      zoneFile, &metadata_writer_));
 
   return s;
 }

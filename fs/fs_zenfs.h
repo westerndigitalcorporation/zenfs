@@ -187,6 +187,12 @@ class ZenFS : public FileSystemWrapper {
   IOStatus DeleteFile(std::string fname);
   IOStatus Repair();
 
+ protected:
+  IOStatus OpenWritableFile(const std::string& fname,
+                            const FileOptions& file_opts,
+                            std::unique_ptr<FSWritableFile>* result,
+                            IODebugContext* dbg, bool reopen);
+
  public:
   explicit ZenFS(ZonedBlockDevice* zbd, std::shared_ptr<FileSystem> aux_fs,
                  std::shared_ptr<Logger> logger);
