@@ -1155,8 +1155,9 @@ Status NewZenFS(FileSystem** fs, const std::string& bdevname,
   return Status::OK();
 }
 
-std::map<std::string, std::string> ListZenFileSystems() {
+Status ListZenFileSystems(std::map<std::string, std::string>& out_list) {
   std::map<std::string, std::string> zenFileSystems;
+
   auto closedirDeleter = [](DIR* d) {
     if (d != nullptr) closedir(d);
   };
@@ -1180,6 +1181,10 @@ std::map<std::string, std::string> ListZenFileSystems() {
         for (const auto z : metazones) {
           Superblock super_block;
           std::unique_ptr<ZenMetaLog> log;
+          if (!z->Acquire()) {
+            return Status::Aborted("Could not aquire busy flag of zone" +
+                                   std::to_string(z->GetZoneNr()));
+          }
           log.reset(new ZenMetaLog(zbd.get(), z));
 
           if (!log->ReadRecord(&super_record, &scratch).ok()) continue;
@@ -1202,7 +1207,8 @@ std::map<std::string, std::string> ListZenFileSystems() {
     }
   }
 
-  return zenFileSystems;
+  out_list = std::move(zenFileSystems);
+  return Status::OK();
 }
 
 void ZenFS::GetZoneSnapshot(std::vector<ZoneSnapshot>& zones) {
@@ -1234,16 +1240,20 @@ FactoryFunc<FileSystem> zenfs_filesystem_reg =
               *errmsg = s.ToString();
             }
           } else if (devID.rfind("uuid:") == 0) {
-            std::map<std::string, std::string> zenFileSystems =
-                ListZenFileSystems();
-            devID.replace(0, strlen("uuid:"), "");
-
-            if (zenFileSystems.find(devID) == zenFileSystems.end()) {
-              *errmsg = "UUID not found";
+            std::map<std::string, std::string> zenFileSystems;
+            s = ListZenFileSystems(zenFileSystems);
+            if (!s.ok()) {
+              *errmsg = s.ToString();
             } else {
-              s = NewZenFS(&fs, zenFileSystems[devID]);
-              if (!s.ok()) {
-                *errmsg = s.ToString();
+              devID.replace(0, strlen("uuid:"), "");
+
+              if (zenFileSystems.find(devID) == zenFileSystems.end()) {
+                *errmsg = "UUID not found";
+              } else {
+                s = NewZenFS(&fs, zenFileSystems[devID]);
+                if (!s.ok()) {
+                  *errmsg = s.ToString();
+                }
               }
             }
           } else {
