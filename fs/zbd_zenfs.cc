@@ -178,7 +178,12 @@ Zone *ZonedBlockDevice::GetIOZone(uint64_t offset) {
 ZonedBlockDevice::ZonedBlockDevice(std::string bdevname,
                                    std::shared_ptr<Logger> logger,
                                    std::shared_ptr<ZenFSMetrics> metrics)
-    : filename_("/dev/" + bdevname), logger_(logger), metrics_(metrics) {
+    : filename_("/dev/" + bdevname),
+      read_f_(-1),
+      read_direct_f_(-1),
+      write_f_(-1),
+      logger_(logger),
+      metrics_(metrics) {
   Info(logger_, "New Zoned Block Device: %s", filename_.c_str());
 }
 
