@@ -278,7 +278,13 @@ int zenfs_tool_df() {
 }
 
 int zenfs_tool_lsuuid() {
-  std::map<std::string, std::string> zenFileSystems = ListZenFileSystems();
+  std::map<std::string, std::string> zenFileSystems;
+  Status s = ListZenFileSystems(zenFileSystems);
+  if (!s.ok()) {
+    fprintf(stderr, "Failed to enumerate file systems: %s",
+            s.ToString().c_str());
+    return 1;
+  }
 
   for (const auto &p : zenFileSystems)
     fprintf(stdout, "%s\t%s\n", p.first.c_str(), p.second.c_str());
