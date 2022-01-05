@@ -380,6 +380,6 @@ class ZenFS : public FileSystemWrapper {
 Status NewZenFS(
     FileSystem** fs, const std::string& bdevname,
     std::shared_ptr<ZenFSMetrics> metrics = std::make_shared<NoZenFSMetrics>());
-std::map<std::string, std::string> ListZenFileSystems();
+Status ListZenFileSystems(std::map<std::string, std::string>& out_list);
 
 }  // namespace ROCKSDB_NAMESPACE
