@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <cstdint>
 #if !defined(ROCKSDB_LITE) && defined(OS_LINUX)
 
 #include <errno.h>
@@ -46,7 +47,7 @@ class Zone {
   uint64_t max_capacity_;
   uint64_t wp_;
   Env::WriteLifeTimeHint lifetime_;
-  std::atomic<long> used_capacity_;
+  std::atomic<uint64_t> used_capacity_;
 
   IOStatus Reset();
   IOStatus Finish();
