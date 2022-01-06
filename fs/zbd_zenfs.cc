@@ -719,7 +719,7 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
   IOStatus s;
   ZenFSMetricsLatencyGuard guard(
       metrics_,
-      IOType::kUnknown == IOType::kWAL
+      io_type == IOType::kWAL
           ? ZENFS_LABEL_DETAILED(IO_ALLOC, WAL, LATENCY)
           : ZENFS_LABEL_DETAILED(IO_ALLOC, NON_WAL, LATENCY),
       Env::Default());
