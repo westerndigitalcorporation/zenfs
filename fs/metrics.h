@@ -4,6 +4,32 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
+// Metrics Framework Introduction
+//
+// The metrics framework is used for users to identify ZenFS's performance
+// bottomneck, it can collect throuput, qps and latency of each critical
+// function call.
+//
+// For different RocksDB forks, users could custom their own metrics reporter to
+// define how they would like to report these collected information.
+//
+// Steps to add new metrics trace point:
+//   1. Add a new trace point label name in `ZenFSMetricsHistograms`.
+//   2. Find target function, add these lines for tracing
+//       // Latency Trace
+//       ZenFSMetricsGuard guard(zoneFile_->GetZBDMetrics(),
+//       ZENFS_WAL_WRITE_LATENCY, Env::Default());
+//       // Throughput Trace
+//       zoneFile_->GetZBDMetrics()->ReportThroughput(ZENFS_WRITE_THROUGHPUT,
+//       data.size());
+//       // QPS Trace
+//       zoneFile_->GetZBDMetrics()->ReportQPS(ZENFS_WRITE_QPS, 1);
+//    3. Implement a `ZenFSMetrics` to define how you would like to report your
+//    data (Refer to file  `metrics_sample.h`)
+//    4. Define your customized label name when implement ZenFSMetrics
+//    5. Init your metrics and pass it into `NewZenFS()` function (default is
+//    `NoZenFSMetrics`)
+
 #pragma once
 #include "rocksdb/env.h"
 namespace ROCKSDB_NAMESPACE {
@@ -11,6 +37,61 @@ namespace ROCKSDB_NAMESPACE {
 class ZenFSMetricsGuard;
 class ZenFSSnapshot;
 class ZenFSSnapshotOptions;
+
+// Types of Reporter that may be used for statistics.
+enum ZenFSMetricsReporterType : uint32_t {
+  ZENFS_REPORTER_TYPE_WITHOUT_CHECK = 0,
+  ZENFS_REPORTER_TYPE_GENERAL,
+  ZENFS_REPORTER_TYPE_LATENCY,
+  ZENFS_REPORTER_TYPE_QPS,
+  ZENFS_REPORTER_TYPE_THROUGHPUT,
+};
+
+// Names of Reporter that may be used for statistics.
+enum ZenFSMetricsHistograms : uint32_t {
+  ZENFS_HISTOGRAM_ENUM_MIN,
+
+  ZENFS_READ_LATENCY,
+  ZENFS_READ_QPS,
+
+  ZENFS_WRITE_LATENCY,
+  ZENFS_WAL_WRITE_LATENCY,
+  ZENFS_NON_WAL_WRITE_LATENCY,
+  ZENFS_WRITE_QPS,
+  ZENFS_WRITE_THROUGHPUT,
+
+  ZENFS_SYNC_LATENCY,
+  ZENFS_WAL_SYNC_LATENCY,
+  ZENFS_NON_WAL_SYNC_LATENCY,
+  ZENFS_SYNC_QPS,
+
+  ZENFS_IO_ALLOC_LATENCY,
+  ZENFS_WAL_IO_ALLOC_LATENCY,
+  ZENFS_NON_WAL_IO_ALLOC_LATENCY,
+  ZENFS_IO_ALLOC_QPS,
+
+  ZENFS_META_ALLOC_LATENCY,
+  ZENFS_META_ALLOC_QPS,
+
+  ZENFS_META_SYNC_LATENCY,
+
+  ZENFS_ROLL_LATENCY,
+  ZENFS_ROLL_QPS,
+  ZENFS_ROLL_THROUGHPUT,
+
+  ZENFS_ACTIVE_ZONES_COUNT,
+  ZENFS_OPEN_ZONES_COUNT,
+
+  ZENFS_FREE_SPACE_SIZE,
+  ZENFS_USED_SPACE_SIZE,
+  ZENFS_RECLAIMABLE_SPACE_SIZE,
+
+  ZENFS_RESETABLE_ZONES_COUNT,
+
+  ZENFS_HISTOGRAM_ENUM_MAX,
+
+  ZENFS_ZONE_WRITE_THROUGHPUT,
+};
 
 struct ZenFSMetrics {
  public:
@@ -92,62 +173,9 @@ struct ZenFSMetricsLatencyGuard {
   virtual uint64_t Report(uint64_t time) { return time; }
 };
 
-// Names of Reporter that may be used for statistics.
-enum ZenFSMetricsHistograms : uint32_t {
-  ZENFS_HISTOGRAM_ENUM_MIN,
-
-  ZENFS_READ_LATENCY,
-  ZENFS_READ_QPS,
-
-  ZENFS_WRITE_LATENCY,
-  ZENFS_WAL_WRITE_LATENCY,
-  ZENFS_NON_WAL_WRITE_LATENCY,
-  ZENFS_WRITE_QPS,
-  ZENFS_WRITE_THROUGHPUT,
-
-  ZENFS_SYNC_LATENCY,
-  ZENFS_WAL_SYNC_LATENCY,
-  ZENFS_NON_WAL_SYNC_LATENCY,
-  ZENFS_SYNC_QPS,
-
-  ZENFS_IO_ALLOC_LATENCY,
-  ZENFS_WAL_IO_ALLOC_LATENCY,
-  ZENFS_NON_WAL_IO_ALLOC_LATENCY,
-  ZENFS_IO_ALLOC_QPS,
-
-  ZENFS_META_ALLOC_LATENCY,
-  ZENFS_META_ALLOC_QPS,
-
-  ZENFS_META_SYNC_LATENCY,
-
-  ZENFS_ROLL_LATENCY,
-  ZENFS_ROLL_QPS,
-  ZENFS_ROLL_THROUGHPUT,
-
-  ZENFS_ACTIVE_ZONES_COUNT,
-  ZENFS_OPEN_ZONES_COUNT,
-
-  ZENFS_FREE_SPACE_SIZE,
-  ZENFS_USED_SPACE_SIZE,
-  ZENFS_RECLAIMABLE_SPACE_SIZE,
-
-  ZENFS_RESETABLE_ZONES_COUNT,
-
-  ZENFS_HISTOGRAM_ENUM_MAX,
-};
-
-// Types of Reporter that may be used for statistics.
-enum ZenFSMetricsReporterType : uint32_t {
-  ZENFS_REPORTER_TYPE_WITHOUT_CHECK = 0,
-  ZENFS_REPORTER_TYPE_GENERAL,
-  ZENFS_REPORTER_TYPE_LATENCY,
-  ZENFS_REPORTER_TYPE_QPS,
-  ZENFS_REPORTER_TYPE_THROUGHPUT,
-};
-
 #define ZENFS_LABEL(label, type) ZENFS_##label##_##type
 #define ZENFS_LABEL_DETAILED(label, sub_label, type) \
   ZENFS_##sub_label##_##label##_##type
-// eg : ZENFS_LABEL(WRITE, WAL, THROUGHPUT) => ZENFS_WRITE_WAL_THROUGHPUT
+// eg : ZENFS_LABEL(WRITE, WAL, THROUGHPUT) => ZENFS_WAL_WRITE_THROUGHPUT
 
 }  // namespace ROCKSDB_NAMESPACE
