@@ -1,4 +1,4 @@
-//  SPDX-License-Identifier: Apache License 2.0 OR GPL-2.0
+// SPDX-License-Identifier: Apache License 2.0 OR GPL-2.0
 
 #include <iostream>
 #include <unordered_map>
@@ -10,59 +10,13 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-const std::unordered_map<ZenFSMetricsHistograms, std::string>
+const std::unordered_map<uint32_t, std::pair<std::string, uint32_t>>
     ZenFSHistogramsNameMap = {
-        {ZENFS_WRITE_LATENCY, "zenfs_write_latency"},
-        {ZENFS_READ_LATENCY, "zenfs_read_latency"},
-        {ZENFS_SYNC_LATENCY, "zenfs_sync_latency"},
-        {ZENFS_IO_ALLOC_LATENCY, "zenfs_io_alloc_latency"},
-        {ZENFS_META_ALLOC_LATENCY, "rzenfs_meta_alloc_latency"},
-        {ZENFS_META_SYNC_LATENCY, "zenfs_metadata_sync_latency"},
-        {ZENFS_ROLL_LATENCY, "zenfs_roll_latency"},
-
-        {ZENFS_WRITE_QPS, "zenfs_write_qps"},
-        {ZENFS_READ_QPS, "zenfs_read_qps"},
-        {ZENFS_SYNC_QPS, "zenfs_sync_qps"},
-        {ZENFS_IO_ALLOC_QPS, "zenfs_io_alloc_qps"},
-        {ZENFS_META_ALLOC_QPS, "zenfs_meta_alloc_qps"},
-        {ZENFS_ROLL_QPS, "zenfs_roll_qps"},
-
-        {ZENFS_WRITE_THROUGHPUT, "rzenfs_write_throughput"},
-        {ZENFS_ROLL_THROUGHPUT, "zenfs_roll_throughput"},
-
-        {ZENFS_FREE_SPACE_SIZE, "zenfs_free_space"},
-        {ZENFS_USED_SPACE_SIZE, "zenfs_used_space"},
-        {ZENFS_RECLAIMABLE_SPACE_SIZE, "zenfs_reclaimable_space"},
-
-        {ZENFS_ACTIVE_ZONES_COUNT, "zenfs_active_zones"},
-        {ZENFS_OPEN_ZONES_COUNT, "zenfs_open_zones"},
-        {ZENFS_RESETABLE_ZONES_COUNT, "zenfs_resetable_zones"}};
-
-const std::unordered_map<ZenFSMetricsHistograms, ZenFSMetricsReporterType>
-    ZenFSHistogramsTypeMap = {
-        {ZENFS_READ_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
-        {ZENFS_IO_ALLOC_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
-        {ZENFS_META_ALLOC_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
-        {ZENFS_META_SYNC_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
-        {ZENFS_ROLL_LATENCY, ZENFS_REPORTER_TYPE_LATENCY},
-
-        {ZENFS_WRITE_QPS, ZENFS_REPORTER_TYPE_QPS},
-        {ZENFS_READ_QPS, ZENFS_REPORTER_TYPE_QPS},
-        {ZENFS_SYNC_QPS, ZENFS_REPORTER_TYPE_QPS},
-        {ZENFS_IO_ALLOC_QPS, ZENFS_REPORTER_TYPE_QPS},
-        {ZENFS_META_ALLOC_QPS, ZENFS_REPORTER_TYPE_QPS},
-        {ZENFS_ROLL_QPS, ZENFS_REPORTER_TYPE_QPS},
-
-        {ZENFS_WRITE_THROUGHPUT, ZENFS_REPORTER_TYPE_THROUGHPUT},
-        {ZENFS_ROLL_THROUGHPUT, ZENFS_REPORTER_TYPE_THROUGHPUT},
-
-        {ZENFS_FREE_SPACE_SIZE, ZENFS_REPORTER_TYPE_GENERAL},
-        {ZENFS_USED_SPACE_SIZE, ZENFS_REPORTER_TYPE_GENERAL},
-        {ZENFS_RECLAIMABLE_SPACE_SIZE, ZENFS_REPORTER_TYPE_GENERAL},
-
-        {ZENFS_ACTIVE_ZONES_COUNT, ZENFS_REPORTER_TYPE_GENERAL},
-        {ZENFS_OPEN_ZONES_COUNT, ZENFS_REPORTER_TYPE_GENERAL},
-        {ZENFS_RESETABLE_ZONES_COUNT, ZENFS_REPORTER_TYPE_GENERAL}};
+        {ZENFS_WRITE_LATENCY,
+         {"zenfs_write_latency", ZENFS_REPORTER_TYPE_LATENCY}},
+        {ZENFS_WRITE_QPS, {"zenfs_write_qps", ZENFS_REPORTER_TYPE_QPS}},
+        {ZENFS_RESETABLE_ZONES_COUNT,
+         {"zenfs_resetable_zones", ZENFS_REPORTER_TYPE_GENERAL}}};
 
 struct ReporterSample {
  public:
@@ -108,9 +62,9 @@ struct ZenFSMetricsSample : public ZenFSMetrics {
 
  public:
   ZenFSMetricsSample(Env* env) : env_(env), reporter_map_() {
-    for (auto& label_with_type : ZenFSHistogramsTypeMap)
+    for (auto& label_with_type : ZenFSHistogramsNameMap)
       AddReporter(static_cast<uint32_t>(label_with_type.first),
-                  static_cast<uint32_t>(label_with_type.second));
+                  static_cast<uint32_t>(label_with_type.second.second));
   }
   ~ZenFSMetricsSample() {}
 
@@ -118,7 +72,9 @@ struct ZenFSMetricsSample : public ZenFSMetrics {
                            uint32_t type_uint = 0) override {
     auto label = static_cast<ZenFSMetricsHistograms>(label_uint);
     assert(ZenFSHistogramsNameMap.find(label) != ZenFSHistogramsNameMap.end());
-    auto type = ZenFSHistogramsTypeMap.find(label)->second;
+
+    auto pair = ZenFSHistogramsNameMap.find(label)->second;
+    auto type = pair.second;
 
     if (type_uint != 0) {
       auto type_check = static_cast<ZenFSMetricsReporterType>(type_uint);
@@ -188,7 +144,8 @@ struct ZenFSMetricsSample : public ZenFSMetrics {
     for (auto& label_with_rep : reporter_map_) {
       auto label = label_with_rep.first;
       auto& reporter = label_with_rep.second;
-      const std::string& name = ZenFSHistogramsNameMap.find(label)->second;
+      auto pair = ZenFSHistogramsNameMap.find(label)->second;
+      const std::string& name = pair.first;
       os << "  " << name << ":[";
 
       std::vector<std::pair<uint64_t, uint64_t>> hist;

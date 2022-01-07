@@ -136,6 +136,7 @@ IOStatus Zone::Close() {
 }
 
 IOStatus Zone::Append(char *data, uint32_t size) {
+  zbd_->GetMetrics()->ReportThroughput(ZENFS_ZONE_WRITE_THROUGHPUT, size);
   char *ptr = data;
   uint32_t left = size;
   int fd = zbd_->GetWriteFD();
@@ -491,9 +492,9 @@ unsigned int GetLifeTimeDiff(Env::WriteLifeTimeHint zone_lifetime,
 IOStatus ZonedBlockDevice::AllocateMetaZone(Zone **out_meta_zone) {
   assert(out_meta_zone);
   *out_meta_zone = nullptr;
-  ZenFSMetricsLatencyGuard guard(metrics_, ZENFS_LABEL(META_ALLOC, LATENCY),
+  ZenFSMetricsLatencyGuard guard(metrics_, ZENFS_META_ALLOC_LATENCY,
                                  Env::Default());
-  metrics_->ReportQPS(ZENFS_LABEL(META_ALLOC, QPS), 1);
+  metrics_->ReportQPS(ZENFS_META_ALLOC_QPS, 1);
 
   for (const auto z : meta_zones) {
     /* If the zone is not used, reset and use it */
@@ -783,13 +784,12 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
   unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
   int new_zone = 0;
   IOStatus s;
-  ZenFSMetricsLatencyGuard guard(
-      metrics_,
-      io_type == IOType::kWAL
-          ? ZENFS_LABEL_DETAILED(IO_ALLOC, WAL, LATENCY)
-          : ZENFS_LABEL_DETAILED(IO_ALLOC, NON_WAL, LATENCY),
-      Env::Default());
-  metrics_->ReportQPS(ZENFS_LABEL(IO_ALLOC, QPS), 1);
+  ZenFSMetricsLatencyGuard guard(metrics_,
+                                 io_type == IOType::kWAL
+                                     ? ZENFS_WAL_IO_ALLOC_LATENCY
+                                     : ZENFS_NON_WAL_IO_ALLOC_LATENCY,
+                                 Env::Default());
+  metrics_->ReportQPS(ZENFS_IO_ALLOC_QPS, 1);
 
   // Check if a deferred IO error was set
   s = GetZoneDeferredStatus();
@@ -882,8 +882,8 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
 
   *out_zone = allocated_zone;
 
-  metrics_->ReportGeneral(ZENFS_LABEL(OPEN_ZONES, COUNT), open_io_zones_);
-  metrics_->ReportGeneral(ZENFS_LABEL(ACTIVE_ZONES, COUNT), active_io_zones_);
+  metrics_->ReportGeneral(ZENFS_OPEN_ZONES_COUNT, open_io_zones_);
+  metrics_->ReportGeneral(ZENFS_ACTIVE_ZONES_COUNT, active_io_zones_);
 
   return IOStatus::OK();
 }
