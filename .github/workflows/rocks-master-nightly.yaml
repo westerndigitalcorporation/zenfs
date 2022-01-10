@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v2
         with:
           repository: facebook/rocksdb
-          ref: master
+          ref: main
           path: harness/rocksdb-context/rocksdb
       - name: Checkout zenfs
         uses: actions/checkout@v2
