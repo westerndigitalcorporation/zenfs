@@ -137,7 +137,7 @@ class ZoneFile {
 
  public:
   std::shared_ptr<ZenFSMetrics> GetZBDMetrics() { return zbd_->GetMetrics(); }
-  IOType GetIOType() const { return IOType::kUnknown; }
+  IOType GetIOType() const { return io_type_; }
   IOStatus RecoverSparseExtents(uint64_t start, uint64_t end, Zone* zone);
 };
 
