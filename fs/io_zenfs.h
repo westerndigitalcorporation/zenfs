@@ -70,6 +70,7 @@ class ZoneFile {
   bool open_for_wr_ = false;
   time_t m_time_;
   bool is_sparse_ = false;
+  bool is_deleted_ = false;
 
   MetadataWriter* metadata_writer_ = NULL;
 
@@ -145,8 +146,10 @@ class ZoneFile {
   IOStatus CloseActiveZone();
 
  public:
-  std::shared_ptr<ZenFSMetrics> GetZBDMetrics() { return zbd_->GetMetrics(); }
-  IOType GetIOType() const { return io_type_; }
+  std::shared_ptr<ZenFSMetrics> GetZBDMetrics() { return zbd_->GetMetrics(); };
+  IOType GetIOType() const { return io_type_; };
+  bool IsDeleted() const { return is_deleted_; };
+  void SetDeleted() { is_deleted_ = true; };
   IOStatus RecoverSparseExtents(uint64_t start, uint64_t end, Zone* zone);
 
  public:
