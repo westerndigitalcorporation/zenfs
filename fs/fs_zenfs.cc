@@ -500,6 +500,8 @@ IOStatus ZenFS::DeleteFile(std::string fname) {
         /* Failed to persist the delete, return to a consistent state */
         files_.insert(std::make_pair(fname.c_str(), zoneFile));
       } else {
+        /* Mark up the file as deleted so it won't be migrated by GC */
+        zoneFile->SetDeleted();
         zoneFile.reset();
       }
     } else {
