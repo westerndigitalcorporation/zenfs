@@ -444,9 +444,9 @@ IOStatus ZenFS::SyncFileMetadata(ZoneFile* zoneFile, bool replace) {
                                  Env::Default());
   std::lock_guard<std::mutex> lock(files_mtx_);
 
-  if (GetFileInternal(zoneFile->GetFilename()) == nullptr) {
-    Info(logger_, "File %s doesn't exist, skip sync file metadata!",
-         zoneFile->GetFilename().data());
+  if (zoneFile->IsDeleted()) {
+    Info(logger_, "File %s has been deleted, skip sync file metadata!",
+         zoneFile->GetFilename().c_str());
     return IOStatus::OK();
   }
 
@@ -1386,6 +1386,7 @@ IOStatus ZenFS::MigrateFileExtents(
   IOStatus s = IOStatus::OK();
   Info(logger_, "MigrateFileExtents, fname: %s, extent count: %lu",
        fname.data(), migrate_exts.size());
+
   // The file may be deleted by other threads, better double check.
   auto zfile = GetFile(fname);
   if (zfile == nullptr || zfile->IsOpenForWR()) {
