@@ -15,6 +15,7 @@ namespace fs = std::filesystem;
 #endif
 
 #include <memory>
+#include <thread>
 
 #include "io_zenfs.h"
 #include "metrics.h"
@@ -144,6 +145,9 @@ class ZenFS : public FileSystemWrapper {
   std::unique_ptr<Superblock> superblock_;
 
   std::shared_ptr<Logger> GetLogger() { return logger_; }
+
+  std::unique_ptr<std::thread> gc_worker_ = nullptr;
+  bool run_gc_worker_ = false;
 
   struct ZenFSMetadataWriter : public MetadataWriter {
     ZenFS* zenFS;
@@ -452,6 +456,12 @@ class ZenFS : public FileSystemWrapper {
   IOStatus MigrateFileExtents(
       const std::string& fname,
       const std::vector<ZoneExtentSnapshot*>& migrate_exts);
+
+ private:
+  const uint64_t GC_START_LEVEL =
+      20;                      /* Enable GC when < 20% free space available */
+  const uint64_t GC_SLOPE = 3; /* GC agressiveness */
+  void GCWorker();
 };
 #endif  // !defined(ROCKSDB_LITE) && defined(OS_LINUX)
 
