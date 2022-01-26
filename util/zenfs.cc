@@ -44,6 +44,34 @@ DEFINE_string(backup_path, "", "Path to backup files");
 
 namespace ROCKSDB_NAMESPACE {
 
+bool zenfs_format_path(std::string &path, bool directory) {
+  /* if the path is a directory, ensure that it ends with a slash */
+  if (directory && path.back() != '/') path = path + "/";
+
+  /* relative paths are not supported */
+  if ((path.find("../", 0) != std::string::npos)) {
+    return false;
+  }
+
+  /* remove any superflous slashes */
+  std::size_t pos = path.find('/', 0);
+  while (pos != std::string::npos) {
+    while (path.compare(pos + 1, 1, "/") == 0) {
+      path.erase(pos + 1, 1);
+    }
+    pos = path.find('/', pos + 1);
+  }
+
+  /* Ensure that there are no leading ./ or / */
+  if (path.find("./") == 0) path.erase(0, 2);
+  if (path.front() == '/') path.erase(0, 1);
+
+  /* Drop current-directory for root paths */
+  if (path == ".") path = "";
+
+  return true;
+}
+
 std::unique_ptr<ZonedBlockDevice> zbd_open(bool readonly, bool exclusive) {
   std::unique_ptr<ZonedBlockDevice> zbd{
       new ZonedBlockDevice(FLAGS_zbd, nullptr)};
@@ -220,20 +248,6 @@ void list_children(const std::unique_ptr<ZenFS> &zenFS,
   }
 }
 
-void format_path(std::string &path) {
-  std::size_t pos = path.find('/', 0);
-  while (pos != std::string::npos) {
-    while (path.compare(pos + 1, 1, "/") == 0) {
-      path.erase(pos + 1, 1);
-    }
-    pos = path.find('/', pos + 1);
-  }
-
-  if (path.front() == '/') path.erase(0, 1);
-
-  if (path.back() != '/') path = path + "/";
-}
-
 int zenfs_tool_list() {
   Status s;
   std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(true, false);
@@ -247,7 +261,10 @@ int zenfs_tool_list() {
     return 1;
   }
 
-  format_path(FLAGS_path);
+  if (!zenfs_format_path(FLAGS_path, true)) {
+    fprintf(stderr, "Error: invalid path\n");
+    return 1;
+  }
   list_children(zenFS, FLAGS_path);
 
   return 0;
@@ -425,7 +442,11 @@ IOStatus zenfs_tool_copy_dir(FileSystem *f_fs, const std::string &f_dir,
     if (t_dir == "") {
       dest_filename = f;
     } else {
-      dest_filename = t_dir + "/" + f;
+      if (t_dir.back() == '/') {
+        dest_filename = t_dir + f;
+      } else {
+        dest_filename = t_dir + "/" + f;
+      }
     }
 
     if (is_dir) {
@@ -451,7 +472,14 @@ IOStatus zenfs_tool_copy_dir(FileSystem *f_fs, const std::string &f_dir,
 int zenfs_tool_backup() {
   Status status;
   IOStatus io_status;
+  IOOptions opts;
+  IODebugContext dbg;
   std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(true, true);
+
+  if (!zenfs_format_path(FLAGS_backup_path, false)) {
+    fprintf(stderr, "Error: invalid backup path \n");
+    return 1;
+  }
 
   if (!zbd) {
     if (FLAGS_force) {
@@ -472,7 +500,15 @@ int zenfs_tool_backup() {
     return 1;
   }
 
-  if (!FLAGS_backup_path.empty() && FLAGS_backup_path.back() != '/') {
+  bool is_dir;
+  io_status = zenFS->IsDirectory(FLAGS_backup_path, opts, &is_dir, &dbg);
+  if (!io_status.ok()) {
+    fprintf(stderr, "IsDirectory failed, error: %s\n",
+            io_status.ToString().c_str());
+    return 1;
+  }
+
+  if (!is_dir) {
     std::string dest_filename =
         FLAGS_path + "/" +
         FLAGS_backup_path.substr(FLAGS_backup_path.find_last_of('/') + 1);
@@ -480,7 +516,9 @@ int zenfs_tool_backup() {
         zenfs_tool_copy_file(zenFS.get(), FLAGS_backup_path,
                              FileSystem::Default().get(), dest_filename);
   } else {
-    io_status = zenfs_tool_copy_dir(zenFS.get(), FLAGS_backup_path,
+    std::string backup_path = FLAGS_backup_path;
+    if (backup_path.size() > 0 && backup_path.back() != '/') backup_path += "/";
+    io_status = zenfs_tool_copy_dir(zenFS.get(), backup_path,
                                     FileSystem::Default().get(), FLAGS_path);
   }
   if (!io_status.ok()) {
@@ -496,9 +534,8 @@ int zenfs_tool_restore() {
   Status status;
   IOStatus io_status;
 
-  if (FLAGS_restore_path.empty()) {
-    fprintf(stderr,
-            "Error: Specify --restore_path=<db path> to restore the db\n");
+  if (!zenfs_format_path(FLAGS_restore_path, true)) {
+    fprintf(stderr, "Error: invalid restore path\n");
     return 1;
   }
 
@@ -515,7 +552,10 @@ int zenfs_tool_restore() {
     return 1;
   }
 
-  io_status = zenfs_tool_copy_dir(FileSystem::Default().get(), FLAGS_path,
+  std::string path = FLAGS_path;
+  if (path.back() != '/') path += "/";
+
+  io_status = zenfs_tool_copy_dir(FileSystem::Default().get(), path,
                                   zenFS.get(), FLAGS_restore_path);
   if (!io_status.ok()) {
     fprintf(stderr, "Copy failed, error: %s\n", io_status.ToString().c_str());
