@@ -468,6 +468,24 @@ IOStatus zenfs_tool_copy_dir(FileSystem *f_fs, const std::string &f_dir,
 
   return s;
 }
+IOStatus zenfs_create_directories(FileSystem *fs, std::string path) {
+  std::string dir_name;
+  IODebugContext dbg;
+  IOOptions opts;
+  IOStatus s;
+  std::size_t p = 0;
+
+  if (path.back() != '/') path += '/';
+
+  while ((p = path.find_first_of('/', p)) != std::string::npos) {
+    dir_name = path.substr(0, p++);
+    if (dir_name.size() == 0) continue;
+    s = fs->CreateDirIfMissing(dir_name, opts, &dbg);
+    if (!s.ok()) break;
+  }
+
+  return s;
+}
 
 int zenfs_tool_backup() {
   Status status;
@@ -516,6 +534,14 @@ int zenfs_tool_backup() {
         zenfs_tool_copy_file(zenFS.get(), FLAGS_backup_path,
                              FileSystem::Default().get(), dest_filename);
   } else {
+    io_status =
+        zenfs_create_directories(FileSystem::Default().get(), FLAGS_path);
+    if (!io_status.ok()) {
+      fprintf(stderr, "Create directory failed, error: %s\n",
+              io_status.ToString().c_str());
+      return 1;
+    }
+
     std::string backup_path = FLAGS_backup_path;
     if (backup_path.size() > 0 && backup_path.back() != '/') backup_path += "/";
     io_status = zenfs_tool_copy_dir(zenFS.get(), backup_path,
@@ -554,6 +580,13 @@ int zenfs_tool_restore() {
 
   std::string path = FLAGS_path;
   if (path.back() != '/') path += "/";
+
+  io_status = zenfs_create_directories(zenFS.get(), FLAGS_restore_path);
+  if (!io_status.ok()) {
+    fprintf(stderr, "Create directory failed, error: %s\n",
+            io_status.ToString().c_str());
+    return 1;
+  }
 
   io_status = zenfs_tool_copy_dir(FileSystem::Default().get(), path,
                                   zenFS.get(), FLAGS_restore_path);
