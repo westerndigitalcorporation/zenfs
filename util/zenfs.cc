@@ -335,7 +335,6 @@ void ReadWriteLifeTimeHints() {
 
   while (wlth_file >> filename >> lth) {
     wlth_map.insert(std::make_pair(filename, (Env::WriteLifeTimeHint)lth));
-    fprintf(stdout, "read: %s %u \n", filename.c_str(), lth);
   }
 
   wlth_file.close();
