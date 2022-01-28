@@ -355,9 +355,17 @@ IOStatus ZoneFile::PositionedRead(uint64_t offset, size_t n, Slice* result,
     if ((pread_sz + r_off) > extent_end) pread_sz = extent_end - r_off;
 
     /* We may get some unaligned direct reads due to non-aligned extent lengths,
-     * so fall back on non-direct-io in that case.
+     * so increase read request size to be aligned to next blocksize boundary.
      */
     bool aligned = (pread_sz % zbd_->GetBlockSize() == 0);
+
+    size_t bytes_to_align = 0;
+    if (direct && !aligned) {
+      bytes_to_align = zbd_->GetBlockSize() - (pread_sz % zbd_->GetBlockSize());
+      pread_sz += bytes_to_align;
+      aligned = true;
+    }
+
     if (direct && aligned) {
       r = pread(f_direct, ptr, pread_sz, r_off);
     } else {
@@ -371,7 +379,13 @@ IOStatus ZoneFile::PositionedRead(uint64_t offset, size_t n, Slice* result,
       break;
     }
 
-    pread_sz = (size_t)r;
+    /* Verify and update the the bytes read count (if read size was incremented,
+     * for alignment purposes).
+     */
+    if ((size_t)r <= pread_sz - bytes_to_align)
+      pread_sz = (size_t)r;
+    else
+      pread_sz -= bytes_to_align;
 
     ptr += pread_sz;
     read += pread_sz;
