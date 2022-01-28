@@ -261,9 +261,15 @@ void ZoneFile::ClearExtents() {
 }
 
 IOStatus ZoneFile::CloseWR() {
-  IOStatus s = CloseActiveZone();
-  extent_start_ = NO_EXTENT;
-  open_for_wr_ = false;
+  IOStatus s;
+  if (open_for_wr_) {
+    /* Mark up the file as being closed */
+    extent_start_ = NO_EXTENT;
+    s = PersistMetadata();
+    if (!s.ok()) return s;
+    open_for_wr_ = false;
+    s = CloseActiveZone();
+  }
   return s;
 }
 
@@ -774,10 +780,7 @@ IOStatus ZonedWritableFile::Close(const IOOptions& /*options*/,
   IOStatus s = DataSync();
   if (!s.ok()) return s;
 
-  s = zoneFile_->CloseWR();
-  if (!s.ok()) return s;
-
-  return zoneFile_->PersistMetadata();
+  return zoneFile_->CloseWR();
 }
 
 IOStatus ZonedWritableFile::FlushBuffer() {
