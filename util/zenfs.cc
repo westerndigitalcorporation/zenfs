@@ -574,7 +574,8 @@ int main(int argc, char **argv) {
   gflags::SetUsageMessage(std::string("\nUSAGE:\n") + argv[0] +
                   +" <command> [OPTIONS]...\nCommands: mkfs, list, ls-uuid, df, backup, restore, dump");
   if (argc < 2) {
-    fprintf(stderr, "You need to specify a command.\n");
+    fprintf(stderr, "You need to specify a command:\n");
+    fprintf(stderr, "\t./zenfs [list | ls-uuid | df | backup | restore | dump | fs-info]\n");
     return 1;
   }
 
