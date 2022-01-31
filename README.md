@@ -67,6 +67,26 @@ This is done with the zenfs utility, using the mkfs command:
 ./plugin/zenfs/util/zenfs mkfs --zbd=<zoned block device> --aux_path=<path to store LOG and LOCK files>
 ```
 
+## ZenFS on-disk file formats
+
+ZenFS Version 1.0.0 and earlier uses version 1 of the on-disk format.
+ZenFS Version 2.0.0 introduces breaking on-disk-format changes (inline extents, support for zones larged than 4GB).
+
+To migrate between different versions of the on-disk file format, use the zenfs backup/restore commands.
+
+```
+# Backup the disk contents to the host file system using the version of zenfs that was used to store the current database
+./plugin/zenfs/util/zenfs backup --path=<path to store backup> --zbd=<zoned block device>
+
+# Switch to the new version of ZenFS you want to use (e.g 1.0.2 -> 2.0.0), rebuild and create a new file system
+# Remove the current aux folder if needed.
+./plugin/zenfs/util/zenfs mkfs --force --zbd=<zoned block device> --aux_path=<path to store LOG and LOCK files>
+
+# Restore the database files to the new version of the file system
+./plugin/zenfs/util/zenfs restore --path=<path to backup> --zbd=<zoned block device>
+
+```
+
 ## Testing with db_bench
 
 To instruct db_bench to use zenfs on a specific zoned block device, the --fs_uri parameter is used.
