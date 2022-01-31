@@ -54,8 +54,13 @@ Status Superblock::DecodeFrom(Slice* input) {
 
   if (magic_ != MAGIC)
     return Status::Corruption("ZenFS Superblock", "Error: Magic missmatch");
-  if (superblock_version_ != CURRENT_SUPERBLOCK_VERSION)
-    return Status::Corruption("ZenFS Superblock", "Error: Version missmatch");
+  if (superblock_version_ != CURRENT_SUPERBLOCK_VERSION) {
+    return Status::Corruption(
+        "ZenFS Superblock",
+        "Error: Incompatible ZenFS on-disk format version, "
+        "please migrate data or switch to previously used ZenFS version. "
+        "See the ZenFS README for instructions.");
+  }
 
   return Status::OK();
 }
