@@ -592,7 +592,9 @@ IOStatus ZenFS::GetChildren(const std::string& dir, const IOOptions& options,
       if (dir.back() == '/') {
         fname.erase(0, dir.length());
       } else {
-        fname.erase(0, dir.length() + 1);
+        if (dir.size() > 0) {
+          fname.erase(0, dir.length() + 1);
+        }
       }
       // Don't report grandchildren
       if (fname.find("/") == std::string::npos) {
