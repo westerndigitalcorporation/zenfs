@@ -995,8 +995,6 @@ Status ZenFS::RecoverFrom(ZenMetaLog* log) {
     return Status::NotFound("ZenFS", "No snapshot found");
 }
 
-#define ZENV_URI_PATTERN "zenfs://"
-
 /* Mount the filesystem by recovering form the latest valid metadata zone */
 Status ZenFS::Mount(bool readonly) {
   std::vector<Zone*> metazones = zbd_->GetMetaZones();
@@ -1464,9 +1462,17 @@ IOStatus ZenFS::MigrateFileExtents(
 extern "C" FactoryFunc<FileSystem> zenfs_filesystem_reg;
 
 FactoryFunc<FileSystem> zenfs_filesystem_reg =
+#if (ROCKSDB_MAJOR < 6) || (ROCKSDB_MAJOR <= 6 && ROCKSDB_MINOR < 28)
     ObjectLibrary::Default()->Register<FileSystem>(
         "zenfs://.*", [](const std::string& uri, std::unique_ptr<FileSystem>* f,
                          std::string* errmsg) {
+#else
+    ObjectLibrary::Default()->AddFactory<FileSystem>(
+        ObjectLibrary::PatternEntry("zenfs", false)
+            .AddSeparator("://"), /* "zenfs://.+" */
+        [](const std::string& uri, std::unique_ptr<FileSystem>* f,
+           std::string* errmsg) {
+#endif
           std::string devID = uri;
           FileSystem* fs = nullptr;
           Status s;
