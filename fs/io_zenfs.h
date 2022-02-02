@@ -255,7 +255,9 @@ class ZonedSequentialFile : public FSSequentialFile {
  public:
   explicit ZonedSequentialFile(std::shared_ptr<ZoneFile> zoneFile,
                                const FileOptions& file_opts)
-      : zoneFile_(zoneFile), rp(0), direct_(file_opts.use_direct_reads) {}
+      : zoneFile_(zoneFile),
+        rp(0),
+        direct_(file_opts.use_direct_reads && !zoneFile->IsSparse()) {}
 
   IOStatus Read(size_t n, const IOOptions& options, Slice* result,
                 char* scratch, IODebugContext* dbg) override;
@@ -283,7 +285,8 @@ class ZonedRandomAccessFile : public FSRandomAccessFile {
  public:
   explicit ZonedRandomAccessFile(std::shared_ptr<ZoneFile> zoneFile,
                                  const FileOptions& file_opts)
-      : zoneFile_(zoneFile), direct_(file_opts.use_direct_reads) {}
+      : zoneFile_(zoneFile),
+        direct_(file_opts.use_direct_reads && !zoneFile->IsSparse()) {}
 
   IOStatus Read(uint64_t offset, size_t n, const IOOptions& options,
                 Slice* result, char* scratch,
