@@ -704,7 +704,7 @@ ZonedWritableFile::ZonedWritableFile(ZonedBlockDevice* zbd, bool _buffered,
 }
 
 ZonedWritableFile::~ZonedWritableFile() {
-  IOStatus s = zoneFile_->CloseWR();
+  IOStatus s = CloseInternal();
   if (buffered) free(sparse_buffer);
 
   if (!s.ok()) {
@@ -776,6 +776,14 @@ IOStatus ZonedWritableFile::RangeSync(uint64_t offset, uint64_t nbytes,
 
 IOStatus ZonedWritableFile::Close(const IOOptions& /*options*/,
                                   IODebugContext* /*dbg*/) {
+  return CloseInternal();
+}
+
+IOStatus ZonedWritableFile::CloseInternal() {
+  if (!zoneFile_->IsOpenForWR()) {
+    return IOStatus::OK();
+  }
+
   IOStatus s = DataSync();
   if (!s.ok()) return s;
 
