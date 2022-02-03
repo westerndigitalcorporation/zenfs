@@ -681,11 +681,10 @@ IOStatus ZenFS::OpenWritableFile(const std::string& fname,
   /* RocksDB does not set the right io type(!)*/
   if (ends_with(fname, ".log")) {
     zoneFile->SetIOType(IOType::kWAL);
+    zoneFile->SetSparse(!file_opts.use_direct_writes);
   } else {
     zoneFile->SetIOType(IOType::kUnknown);
   }
-
-  zoneFile->SetSparse(!file_opts.use_direct_writes);
 
   /* Persist the creation of the file */
   s = SyncFileMetadata(zoneFile);

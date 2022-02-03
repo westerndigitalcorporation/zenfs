@@ -452,6 +452,60 @@ IOStatus ZoneFile::AllocateNewZone() {
   return PersistMetadata();
 }
 
+/* Byte-aligned writes without a sparse header */
+IOStatus ZoneFile::BufferedAppend(char* buffer, uint32_t data_size) {
+  uint32_t left = data_size;
+  uint32_t wr_size;
+  uint32_t block_sz = GetBlockSize();
+  IOStatus s;
+
+  if (active_zone_ == NULL) {
+    s = AllocateNewZone();
+    if (!s.ok()) return s;
+  }
+
+  while (left) {
+    wr_size = left;
+    if (wr_size > active_zone_->capacity_) wr_size = active_zone_->capacity_;
+
+    /* Pad to the next block boundary if needed */
+    uint32_t align = wr_size % block_sz;
+    uint32_t pad_sz = 0;
+
+    if (align) pad_sz = block_sz - align;
+
+    /* the buffer size s aligned on block size, so this is ok*/
+    if (pad_sz) memset(buffer + wr_size, 0x0, pad_sz);
+
+    uint64_t extent_length = wr_size;
+
+    s = active_zone_->Append(buffer, wr_size + pad_sz);
+    if (!s.ok()) return s;
+
+    extents_.push_back(
+        new ZoneExtent(extent_start_, extent_length, active_zone_));
+
+    extent_start_ = active_zone_->wp_;
+    active_zone_->used_capacity_ += extent_length;
+    fileSize += extent_length;
+    left -= extent_length;
+
+    if (active_zone_->capacity_ == 0) {
+      s = CloseActiveZone();
+      if (!s.ok()) {
+        return s;
+      }
+      if (left) {
+        memcpy((void*)(buffer), (void*)(buffer + wr_size), left);
+      }
+      s = AllocateNewZone();
+      if (!s.ok()) return s;
+    }
+  }
+
+  return IOStatus::OK();
+}
+
 /* Byte-aligned, sparse writes with inline metadata
    the caller reserves 8 bytes of data for a size header */
 IOStatus ZoneFile::SparseAppend(char* sparse_buffer, uint32_t data_size) {
@@ -683,21 +737,28 @@ ZonedWritableFile::ZonedWritableFile(ZonedBlockDevice* zbd, bool _buffered,
   buffer = nullptr;
 
   if (buffered) {
-    size_t sparse_buffer_sz;
+    if (zoneFile->IsSparse()) {
+      size_t sparse_buffer_sz;
 
-    sparse_buffer_sz =
-        1024 * 1024 + block_sz; /* one extra block size for padding */
-    int ret = posix_memalign((void**)&sparse_buffer, sysconf(_SC_PAGESIZE),
-                             sparse_buffer_sz);
+      sparse_buffer_sz =
+          1024 * 1024 + block_sz; /* one extra block size for padding */
+      int ret = posix_memalign((void**)&sparse_buffer, sysconf(_SC_PAGESIZE),
+                               sparse_buffer_sz);
 
-    if (ret) sparse_buffer = nullptr;
+      if (ret) sparse_buffer = nullptr;
 
-    assert(sparse_buffer != nullptr);
+      assert(sparse_buffer != nullptr);
 
-    buffer_sz = sparse_buffer_sz - ZoneFile::SPARSE_HEADER_SIZE - block_sz;
-    buffer = sparse_buffer + ZoneFile::SPARSE_HEADER_SIZE;
+      buffer_sz = sparse_buffer_sz - ZoneFile::SPARSE_HEADER_SIZE - block_sz;
+      buffer = sparse_buffer + ZoneFile::SPARSE_HEADER_SIZE;
+    } else {
+      buffer_sz = 1024 * 1024;
+      int ret =
+          posix_memalign((void**)&buffer, sysconf(_SC_PAGESIZE), buffer_sz);
 
-    zoneFile_->SetSparse(true);
+      if (ret) buffer = nullptr;
+      assert(buffer != nullptr);
+    }
   }
 
   zoneFile_->OpenWR(metadata_writer);
@@ -705,7 +766,13 @@ ZonedWritableFile::ZonedWritableFile(ZonedBlockDevice* zbd, bool _buffered,
 
 ZonedWritableFile::~ZonedWritableFile() {
   IOStatus s = CloseInternal();
-  if (buffered) free(sparse_buffer);
+  if (buffered) {
+    if (sparse_buffer != nullptr) {
+      free(sparse_buffer);
+    } else {
+      free(buffer);
+    }
+  }
 
   if (!s.ok()) {
     zoneFile_->GetZbd()->SetZoneDeferredStatus(s);
@@ -795,7 +862,12 @@ IOStatus ZonedWritableFile::FlushBuffer() {
 
   if (buffer_pos == 0) return IOStatus::OK();
 
-  s = zoneFile_->SparseAppend(sparse_buffer, buffer_pos);
+  if (zoneFile_->IsSparse()) {
+    s = zoneFile_->SparseAppend(sparse_buffer, buffer_pos);
+  } else {
+    s = zoneFile_->BufferedAppend(buffer, buffer_pos);
+  }
+
   if (!s.ok()) {
     return s;
   }
