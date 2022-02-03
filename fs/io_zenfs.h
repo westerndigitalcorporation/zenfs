@@ -91,6 +91,7 @@ class ZoneFile {
   IOStatus PersistMetadata();
 
   IOStatus Append(void* buffer, int data_size);
+  IOStatus BufferedAppend(char* data, uint32_t size);
   IOStatus SparseAppend(char* data, uint32_t size);
   IOStatus SetWriteLifeTimeHint(Env::WriteLifeTimeHint lifetime);
   void SetIOType(IOType io_type);
