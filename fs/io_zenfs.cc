@@ -798,6 +798,11 @@ IOStatus ZonedWritableFile::DataSync() {
     if (!s.ok()) {
       return s;
     }
+
+    /* We need to persist the new extent, if the file is not sparse,
+     * as we can't use the active zone WP, which is block-aligned, to recover
+     * the file size */
+    if (!zoneFile_->IsSparse()) return zoneFile_->PersistMetadata();
   } else {
     /* For direct writes, there is no buffer to flush, we just need to push
        an extent for the latest written data */
@@ -819,6 +824,9 @@ IOStatus ZonedWritableFile::Fsync(const IOOptions& /*options*/,
 
   s = DataSync();
   if (!s.ok()) return s;
+
+  /* As we've already synced the metadata in DataSync, no need to do it again */
+  if (buffered && !zoneFile_->IsSparse()) return IOStatus::OK();
 
   return zoneFile_->PersistMetadata();
 }
