@@ -54,8 +54,8 @@ jobs:
       - name: Collect MTR RocksDB parallel replication results
         run: cd harness && make NO_VAGRANT=1 upload
         if: always()
-      - name: Remove docker images
-        run: docker image prune --force
+      - name: Remove images
+        run: podman image prune --force
         if: always()
       - name: Failure check
         if: steps.mtrTest1.outcome != 'success' || steps.mtrTest2.outcome != 'success' || steps.mtrTest3.outcome != 'success' || steps.mtrTest4.outcome != 'success' 

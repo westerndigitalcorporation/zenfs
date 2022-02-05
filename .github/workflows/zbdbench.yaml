@@ -31,6 +31,6 @@ jobs:
       - name: Collect Results
         run: cd harness && make NO_VAGRANT=1 upload 
         if: always()
-      - name: Remove docker images
-        run: docker image prune --force
+      - name: Remove images
+        run: podman rmi --force --all
         if: always()
