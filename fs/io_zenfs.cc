@@ -674,7 +674,6 @@ ZonedWritableFile::ZonedWritableFile(ZonedBlockDevice* zbd, bool _buffered,
                                      std::shared_ptr<ZoneFile> zoneFile,
                                      MetadataWriter* metadata_writer) {
   wp = zoneFile->GetFileSize();
-  assert(wp == 0);
 
   buffered = _buffered;
   block_sz = zbd->GetBlockSize();
