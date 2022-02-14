@@ -1035,7 +1035,7 @@ IOStatus ZoneFile::MigrateData(uint64_t offset, uint32_t length,
   uint32_t read_sz = step;
   int block_sz = zbd_->GetBlockSize();
 
-  assert(offset % block_sz != 0);
+  assert(offset % block_sz == 0);
   if (offset % block_sz != 0) {
     return IOStatus::IOError("MigrateData offset is not aligned!\n");
   }
