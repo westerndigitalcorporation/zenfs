@@ -59,6 +59,10 @@ Otherwise the ZenFS version contains the 'git describe' version string from when
 .B link
 Create a hardlink to the specified file.
 
+.TP
+.B delete
+Delete a specified link or file.
+
 .SH OPTIONS
 
 .TP
@@ -110,6 +114,10 @@ Prints the contents of the current ZenFS superblock.
 .TP
 .B zenfs link --zbd=nvme0n1 --src_file=rocksdbtest/000045.sst --dst_file=rocksdbtest/linkto45.sst
 Creates a hardlink to an existing file.
+
+.TP
+.B zenfs delete --zbd=nvme0n1 --path=rocksdbtest/dbbench/000011.sst
+Deletes an existing file or link specified in the path.
 
 .SH AUTHOR
 .TP
