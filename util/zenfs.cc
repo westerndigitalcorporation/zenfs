@@ -592,6 +592,37 @@ int zenfs_tool_link() {
   return 0;
 }
 
+int zenfs_tool_delete_file() {
+  Status s;
+  IOStatus io_s;
+  IOOptions iopts;
+  IODebugContext dbg;
+
+  if (FLAGS_path.empty()) {
+    fprintf(stderr, "Error: Specify --path of the file to be deleted.\n");
+    return 1;
+  }
+  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(false, true);
+  if (!zbd) return 1;
+
+  std::unique_ptr<ZenFS> zenFS;
+  s = zenfs_mount(zbd, &zenFS, false);
+  if (!s.ok()) {
+    fprintf(stderr, "Failed to mount filesystem, error: %s\n",
+            s.ToString().c_str());
+    return 1;
+  }
+
+  io_s = zenFS->DeleteFile(FLAGS_path, iopts, &dbg);
+  if (!io_s.ok()) {
+    fprintf(stderr, "Delete failed with error: %s\n", io_s.ToString().c_str());
+    return 1;
+  }
+  fprintf(stdout, "Deleted file %s\n", FLAGS_path.c_str());
+
+  return 0;
+}
+
 int zenfs_tool_restore() {
   Status status;
   IOStatus io_status;
@@ -682,12 +713,12 @@ int main(int argc, char **argv) {
   gflags::SetUsageMessage(
       std::string("\nUSAGE:\n") + argv[0] +
       +" <command> [OPTIONS]...\nCommands: mkfs, list, ls-uuid, " +
-      +"df, backup, restore, dump, fs-info, link");
+      +"df, backup, restore, dump, fs-info, link, delete");
   if (argc < 2) {
     fprintf(stderr, "You need to specify a command:\n");
     fprintf(stderr,
             "\t./zenfs [list | ls-uuid | df | backup | restore | dump | "
-            "fs-info | link]\n");
+            "fs-info | link | delete]\n");
     return 1;
   }
 
@@ -717,6 +748,8 @@ int main(int argc, char **argv) {
     return ROCKSDB_NAMESPACE::zenfs_tool_fsinfo();
   } else if (subcmd == "link") {
     return ROCKSDB_NAMESPACE::zenfs_tool_link();
+  } else if (subcmd == "delete") {
+    return ROCKSDB_NAMESPACE::zenfs_tool_delete_file();
   } else {
     fprintf(stderr, "Subcommand not recognized: %s\n", subcmd.c_str());
     return 1;
