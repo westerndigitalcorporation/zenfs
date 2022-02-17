@@ -55,6 +55,10 @@ The ZenFS version is set to "Not Available" if the superblock was created with a
 .br
 Otherwise the ZenFS version contains the 'git describe' version string from when it was build.
 
+.TP
+.B link
+Create a hardlink to the specified file.
+
 .SH OPTIONS
 
 .TP
@@ -102,6 +106,10 @@ Dump ZenFS filesystem metadata in JSON format.
 .TP
 .B zenfs fs-info --zbd=nvme0n1
 Prints the contents of the current ZenFS superblock.
+
+.TP
+.B zenfs link --zbd=nvme0n1 --src_file=rocksdbtest/000045.sst --dst_file=rocksdbtest/linkto45.sst
+Creates a hardlink to an existing file.
 
 .SH AUTHOR
 .TP
