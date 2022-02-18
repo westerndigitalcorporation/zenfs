@@ -63,6 +63,10 @@ Create a hardlink to the specified file.
 .B delete
 Delete a specified link or file.
 
+.TP
+.B rename
+Rename a specified link or file.
+
 .SH OPTIONS
 
 .TP
@@ -118,6 +122,10 @@ Creates a hardlink to an existing file.
 .TP
 .B zenfs delete --zbd=nvme0n1 --path=rocksdbtest/dbbench/000011.sst
 Deletes an existing file or link specified in the path.
+
+.TP
+.B zenfs rename --zbd=nvme0n1 --src_file=rocksdbtest/000045.sst --dst_file=rocksdbtest/newname.sst
+Rename a specified file or link, if the destination file exist, delete it and rename.
 
 .SH AUTHOR
 .TP

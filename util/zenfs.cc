@@ -623,6 +623,39 @@ int zenfs_tool_delete_file() {
   return 0;
 }
 
+int zenfs_tool_rename_file() {
+  Status s;
+  IOStatus io_s;
+  IOOptions iopts;
+  IODebugContext dbg;
+
+  if (FLAGS_src_file.empty() || FLAGS_dest_file.empty()) {
+    fprintf(stderr,
+            "Error: Specify --src_file and --dest_file to be renamed\n");
+    return 1;
+  }
+  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(false, true);
+  if (!zbd) return 1;
+
+  std::unique_ptr<ZenFS> zenFS;
+  s = zenfs_mount(zbd, &zenFS, false);
+  if (!s.ok()) {
+    fprintf(stderr, "Failed to mount filesystem, error: %s\n",
+            s.ToString().c_str());
+    return 1;
+  }
+
+  io_s = zenFS->RenameFile(FLAGS_src_file, FLAGS_dest_file, iopts, &dbg);
+  if (!io_s.ok()) {
+    fprintf(stderr, "Rename failed, error: %s\n", io_s.ToString().c_str());
+    return 1;
+  }
+  fprintf(stdout, "Renamed file %s to %s\n", FLAGS_src_file.c_str(),
+          FLAGS_dest_file.c_str());
+
+  return 0;
+}
+
 int zenfs_tool_restore() {
   Status status;
   IOStatus io_status;
@@ -713,12 +746,12 @@ int main(int argc, char **argv) {
   gflags::SetUsageMessage(
       std::string("\nUSAGE:\n") + argv[0] +
       +" <command> [OPTIONS]...\nCommands: mkfs, list, ls-uuid, " +
-      +"df, backup, restore, dump, fs-info, link, delete");
+      +"df, backup, restore, dump, fs-info, link, delete, rename");
   if (argc < 2) {
     fprintf(stderr, "You need to specify a command:\n");
     fprintf(stderr,
             "\t./zenfs [list | ls-uuid | df | backup | restore | dump | "
-            "fs-info | link | delete]\n");
+            "fs-info | link | delete | rename]\n");
     return 1;
   }
 
@@ -750,6 +783,8 @@ int main(int argc, char **argv) {
     return ROCKSDB_NAMESPACE::zenfs_tool_link();
   } else if (subcmd == "delete") {
     return ROCKSDB_NAMESPACE::zenfs_tool_delete_file();
+  } else if (subcmd == "rename") {
+    return ROCKSDB_NAMESPACE::zenfs_tool_rename_file();
   } else {
     fprintf(stderr, "Subcommand not recognized: %s\n", subcmd.c_str());
     return 1;
