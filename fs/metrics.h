@@ -91,6 +91,9 @@ enum ZenFSMetricsHistograms : uint32_t {
   ZENFS_HISTOGRAM_ENUM_MAX,
 
   ZENFS_ZONE_WRITE_THROUGHPUT,
+  ZENFS_ZONE_WRITE_LATENCY,
+
+  ZENFS_L0_IO_ALLOC_LATENCY,
 };
 
 struct ZenFSMetrics {
