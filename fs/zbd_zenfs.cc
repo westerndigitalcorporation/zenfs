@@ -136,6 +136,8 @@ IOStatus Zone::Close() {
 }
 
 IOStatus Zone::Append(char *data, uint32_t size) {
+  ZenFSMetricsLatencyGuard guard(zbd_->GetMetrics(), ZENFS_ZONE_WRITE_LATENCY,
+                                 Env::Default());
   zbd_->GetMetrics()->ReportThroughput(ZENFS_ZONE_WRITE_THROUGHPUT, size);
   char *ptr = data;
   uint32_t left = size;
@@ -784,11 +786,18 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
   unsigned int best_diff = LIFETIME_DIFF_NOT_GOOD;
   int new_zone = 0;
   IOStatus s;
-  ZenFSMetricsLatencyGuard guard(metrics_,
-                                 io_type == IOType::kWAL
-                                     ? ZENFS_WAL_IO_ALLOC_LATENCY
-                                     : ZENFS_NON_WAL_IO_ALLOC_LATENCY,
-                                 Env::Default());
+
+  auto tag = ZENFS_WAL_IO_ALLOC_LATENCY;
+  if (io_type != IOType::kWAL) {
+    // L0 flushes have lifetime MEDIUM
+    if (file_lifetime == Env::WLTH_MEDIUM) {
+      tag = ZENFS_L0_IO_ALLOC_LATENCY;
+    } else {
+      tag = ZENFS_NON_WAL_IO_ALLOC_LATENCY;
+    }
+  }
+
+  ZenFSMetricsLatencyGuard guard(metrics_, tag, Env::Default());
   metrics_->ReportQPS(ZENFS_IO_ALLOC_QPS, 1);
 
   // Check if a deferred IO error was set
