@@ -1,6 +1,6 @@
 # ZenFS: RocksDB Storage Backend for ZNS SSDs and SMR HDDs
 
-ZenFS is a file system plugin that utilizes RockDB's FileSystem interface to
+ZenFS is a file system plugin that utilizes [RocksDB](https://github.com/facebook/rocksdb)'s FileSystem interface to
 place files into zones on a raw zoned block device. By separating files into
 zones and utilizing write life time hints to co-locate data of similar life
 times the system write amplification is greatly reduced compared to
