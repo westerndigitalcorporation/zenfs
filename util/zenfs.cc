@@ -20,8 +20,10 @@
 
 #ifdef WITH_TERARKDB
 #include <fs/fs_zenfs.h>
+#include <fs/version.h>
 #else
 #include <rocksdb/plugin/zenfs/fs/fs_zenfs.h>
+#include <rocksdb/plugin/zenfs/fs/version.h>
 #endif
 
 using GFLAGS_NAMESPACE::ParseCommandLineFlags;
@@ -581,6 +583,7 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  gflags::SetVersionString(ZENFS_VERSION);
   std::string subcmd(argv[1]);
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
