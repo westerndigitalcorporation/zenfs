@@ -67,6 +67,10 @@ Delete a specified link or file.
 .B rename
 Rename a specified link or file.
 
+.TP
+.B rmdir
+Delete a specified directory. Can be forced with the '--force' flag.
+
 .SH OPTIONS
 
 .TP
@@ -126,6 +130,10 @@ Deletes an existing file or link specified in the path.
 .TP
 .B zenfs rename --zbd=nvme0n1 --src_file=rocksdbtest/000045.sst --dst_file=rocksdbtest/newname.sst
 Rename a specified file or link, if the destination file exist, delete it and rename.
+
+.TP
+.B zenfs rmdir --zbd=nvme0n1 --path=rocksdbtest/dbbench --force
+Deletes the directory specified by the path with all its contents.
 
 .SH AUTHOR
 .TP

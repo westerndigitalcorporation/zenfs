@@ -692,6 +692,56 @@ IOStatus ZenFS::GetChildren(const std::string& dir, const IOOptions& options,
   return GetChildrenNoLock(dir, options, result, dbg);
 }
 
+/* Must hold files_mtx_ */
+IOStatus ZenFS::DeleteDirRecursiveNoLock(const std::string& d,
+                                         const IOOptions& options,
+                                         IODebugContext* dbg) {
+  std::vector<std::string> children;
+  IOStatus s;
+
+  Debug(logger_, "DeleteDirRecursiveNoLock: %s aux: %s\n", d.c_str(),
+        ToAuxPath(d).c_str());
+
+  s = GetChildrenNoLock(d, options, &children, dbg);
+  if (!s.ok()) {
+    return s;
+  }
+
+  for (const auto& child : children) {
+    std::string file_to_delete =
+        (std::filesystem::path(d) / std::filesystem::path(child)).string();
+    bool is_dir;
+
+    s = IsDirectoryNoLock(file_to_delete, options, &is_dir, dbg);
+    if (!s.ok()) {
+      return s;
+    }
+
+    if (is_dir) {
+      s = DeleteDirRecursiveNoLock(file_to_delete, options, dbg);
+    } else {
+      s = DeleteFileNoLock(file_to_delete, options, dbg);
+    }
+    if (!s.ok()) {
+      return s;
+    }
+  }
+
+  return target()->DeleteDir(ToAuxPath(d), options, dbg);
+}
+
+IOStatus ZenFS::DeleteDirRecursive(const std::string& d,
+                                   const IOOptions& options,
+                                   IODebugContext* dbg) {
+  IOStatus s;
+  {
+    std::lock_guard<std::mutex> lock(files_mtx_);
+    s = DeleteDirRecursiveNoLock(d, options, dbg);
+  }
+  if (s.ok()) s = zbd_->ResetUnusedIOZones();
+  return s;
+}
+
 IOStatus ZenFS::OpenWritableFile(const std::string& fname,
                                  const FileOptions& file_opts,
                                  std::unique_ptr<FSWritableFile>* result,
