@@ -33,12 +33,13 @@ using GFLAGS_NAMESPACE::SetUsageMessage;
 DEFINE_string(zbd, "", "Path to a zoned block device.");
 DEFINE_string(aux_path, "",
               "Path for auxiliary file storage (log and lock files).");
-DEFINE_bool(force, false,
-            "Force the action. May result in data loss.\n"
-            "If used with mkfs, data will be lost on an existing "
-            "file system. If used with backup, data copied from "
-            "the drive will likely be incomplete and/or corrupt "
-            "- only use this for testing purposes.");
+DEFINE_bool(
+    force, false,
+    "Force the action. May result in data loss.\n"
+    "If used with mkfs or rmdir commands, data will be lost on an existing "
+    "file system. If used with backup, data copied from "
+    "the drive will likely be incomplete and/or corrupt "
+    "- only use this for testing purposes.");
 DEFINE_string(path, "", "File path");
 DEFINE_int32(finish_threshold, 0, "Finish used zones if less than x% left");
 DEFINE_string(restore_path, "", "Path to restore files");
@@ -656,6 +657,49 @@ int zenfs_tool_rename_file() {
   return 0;
 }
 
+int zenfs_tool_remove_directory() {
+  Status s;
+  IOStatus io_s;
+  IOOptions iopts;
+  IODebugContext dbg;
+
+  if (FLAGS_path.empty()) {
+    fprintf(stderr, "Error: Specify --path of the directory to be deleted.\n");
+    return 1;
+  }
+  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(false, true);
+  if (!zbd) return 1;
+
+  std::unique_ptr<ZenFS> zenFS;
+  s = zenfs_mount(zbd, &zenFS, false);
+  if (!s.ok()) {
+    fprintf(stderr, "Failed to mount filesystem, error: %s\n",
+            s.ToString().c_str());
+    return 1;
+  }
+
+  if (FLAGS_force) {
+    io_s = zenFS->DeleteDirRecursive(FLAGS_path, iopts, &dbg);
+    if (!io_s.ok()) {
+      fprintf(stderr,
+              "Force delete for given directory failed with error: %s\n",
+              io_s.ToString().c_str());
+      return 1;
+    }
+    fprintf(stdout, "Force deleted directory %s\n", FLAGS_path.c_str());
+  } else {
+    io_s = zenFS->DeleteDir(FLAGS_path, iopts, &dbg);
+    if (!io_s.ok()) {
+      fprintf(stderr, "Delete for given directory failed with error: %s\n",
+              io_s.ToString().c_str());
+      return 1;
+    }
+    fprintf(stdout, "Deleted directory %s\n", FLAGS_path.c_str());
+  }
+
+  return 0;
+}
+
 int zenfs_tool_restore() {
   Status status;
   IOStatus io_status;
@@ -746,12 +790,12 @@ int main(int argc, char **argv) {
   gflags::SetUsageMessage(
       std::string("\nUSAGE:\n") + argv[0] +
       +" <command> [OPTIONS]...\nCommands: mkfs, list, ls-uuid, " +
-      +"df, backup, restore, dump, fs-info, link, delete, rename");
+      +"df, backup, restore, dump, fs-info, link, delete, rename, rmdir");
   if (argc < 2) {
     fprintf(stderr, "You need to specify a command:\n");
     fprintf(stderr,
             "\t./zenfs [list | ls-uuid | df | backup | restore | dump | "
-            "fs-info | link | delete | rename]\n");
+            "fs-info | link | delete | rename | rmdir]\n");
     return 1;
   }
 
@@ -785,6 +829,8 @@ int main(int argc, char **argv) {
     return ROCKSDB_NAMESPACE::zenfs_tool_delete_file();
   } else if (subcmd == "rename") {
     return ROCKSDB_NAMESPACE::zenfs_tool_rename_file();
+  } else if (subcmd == "rmdir") {
+    return ROCKSDB_NAMESPACE::zenfs_tool_remove_directory();
   } else {
     fprintf(stderr, "Subcommand not recognized: %s\n", subcmd.c_str());
     return 1;
