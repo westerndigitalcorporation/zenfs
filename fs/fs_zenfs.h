@@ -201,7 +201,12 @@ class ZenFS : public FileSystemWrapper {
                              std::vector<std::string>* result,
                              IODebugContext* dbg);
   std::shared_ptr<ZoneFile> GetFile(std::string fname);
-  IOStatus DeleteFile(std::string fname);
+
+  /* Must hold files_mtx_, On successful return,
+   * caller must release files_mtx_ and call ResetUnusedIOZones() */
+  IOStatus DeleteFileNoLock(std::string fname, const IOOptions& options,
+                            IODebugContext* dbg);
+
   IOStatus Repair();
 
  protected:

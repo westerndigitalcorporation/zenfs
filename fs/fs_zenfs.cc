@@ -486,35 +486,34 @@ std::shared_ptr<ZoneFile> ZenFS::GetFile(std::string fname) {
   return zoneFile;
 }
 
-IOStatus ZenFS::DeleteFile(std::string fname) {
+/* Must hold files_mtx_ */
+IOStatus ZenFS::DeleteFileNoLock(std::string fname, const IOOptions& options,
+                                 IODebugContext* dbg) {
   std::shared_ptr<ZoneFile> zoneFile(nullptr);
   IOStatus s;
 
-  {
-    std::lock_guard<std::mutex> lock(files_mtx_);
-    zoneFile = GetFileNoLock(fname);
-    if (zoneFile != nullptr) {
-      std::string record;
+  zoneFile = GetFileNoLock(fname);
+  if (zoneFile != nullptr) {
+    std::string record;
 
-      zoneFile = files_[fname];
-      files_.erase(fname);
-
-      EncodeFileDeletionTo(zoneFile, &record);
-      s = PersistRecord(record);
-      if (!s.ok()) {
-        /* Failed to persist the delete, return to a consistent state */
-        files_.insert(std::make_pair(fname.c_str(), zoneFile));
-      } else {
-        /* Mark up the file as deleted so it won't be migrated by GC */
-        zoneFile->SetDeleted();
-        zoneFile.reset();
-      }
+    if (zoneFile->IsOpenForWR())
+      return IOStatus::Busy("ZenFS::DeleteFileNoLock(): file open for writing:",
+                            fname.c_str());
+    zoneFile = files_[fname];
+    files_.erase(fname);
+    EncodeFileDeletionTo(zoneFile, &record);
+    s = PersistRecord(record);
+    if (!s.ok()) {
+      /* Failed to persist the delete, return to a consistent state */
+      files_.insert(std::make_pair(fname.c_str(), zoneFile));
     } else {
-      s = IOStatus::NotFound("ZenFS::DeleteFile(): File not found");
+      /* Mark up the file as deleted so it won't be migrated by GC */
+      zoneFile->SetDeleted();
+      zoneFile.reset();
     }
+  } else {
+    s = target()->DeleteFile(ToAuxPath(fname), options, dbg);
   }
-
-  if (s.ok()) s = zbd_->ResetUnusedIOZones();
 
   return s;
 }
@@ -586,7 +585,7 @@ IOStatus ZenFS::ReuseWritableFile(const std::string& fname,
    * Delete the old file as it cannot be written from start of file
    * and create a new file with fname
    */
-  s = DeleteFile(old_fname);
+  s = DeleteFile(old_fname, file_opts.io_options, dbg);
   if (!s.ok()) {
     Error(logger_, "Failed to delete file %s\n", old_fname.c_str());
     return s;
@@ -672,7 +671,7 @@ IOStatus ZenFS::GetChildren(const std::string& dir, const IOOptions& options,
 IOStatus ZenFS::OpenWritableFile(const std::string& fname,
                                  const FileOptions& file_opts,
                                  std::unique_ptr<FSWritableFile>* result,
-                                 IODebugContext* /*dbg*/, bool reopen) {
+                                 IODebugContext* dbg, bool reopen) {
   IOStatus s;
   std::shared_ptr<ZoneFile> zoneFile = GetFile(fname);
 
@@ -684,7 +683,7 @@ IOStatus ZenFS::OpenWritableFile(const std::string& fname,
   }
 
   if (zoneFile != nullptr) {
-    s = DeleteFile(fname);
+    s = DeleteFile(fname, file_opts.io_options, dbg);
     if (!s.ok()) return s;
   }
 
@@ -718,20 +717,14 @@ IOStatus ZenFS::OpenWritableFile(const std::string& fname,
 IOStatus ZenFS::DeleteFile(const std::string& fname, const IOOptions& options,
                            IODebugContext* dbg) {
   IOStatus s;
-  std::shared_ptr<ZoneFile> zoneFile = GetFile(fname);
 
-  Debug(logger_, "Delete file: %s \n", fname.c_str());
+  Debug(logger_, "DeleteFile: %s \n", fname.c_str());
 
-  if (zoneFile == nullptr) {
-    return target()->DeleteFile(ToAuxPath(fname), options, dbg);
-  }
-
-  if (zoneFile->IsOpenForWR()) {
-    s = IOStatus::Busy("Cannot delete, file open for writing: ", fname.c_str());
-  } else {
-    s = DeleteFile(fname);
-    zbd_->LogZoneStats();
-  }
+  files_mtx_.lock();
+  s = DeleteFileNoLock(fname, options, dbg);
+  files_mtx_.unlock();
+  if (s.ok()) s = zbd_->ResetUnusedIOZones();
+  zbd_->LogZoneStats();
 
   return s;
 }
@@ -785,7 +778,7 @@ IOStatus ZenFS::RenameFile(const std::string& source_path,
   if (source_file != nullptr) {
     existing_dest_file = GetFile(dest_path);
     if (existing_dest_file != nullptr) {
-      s = DeleteFile(dest_path);
+      s = DeleteFile(dest_path, options, dbg);
       if (!s.ok()) {
         return s;
       }
