@@ -187,7 +187,8 @@ class ZenFS : public FileSystemWrapper {
     return path;
   }
 
-  std::shared_ptr<ZoneFile> GetFileInternal(std::string fname);
+  /* Must hold files_mtx_ */
+  std::shared_ptr<ZoneFile> GetFileNoLock(std::string fname);
   std::shared_ptr<ZoneFile> GetFile(std::string fname);
   IOStatus DeleteFile(std::string fname);
   IOStatus Repair();

@@ -466,7 +466,7 @@ IOStatus ZenFS::SyncFileMetadata(ZoneFile* zoneFile, bool replace) {
 }
 
 /* Must hold files_mtx_ */
-std::shared_ptr<ZoneFile> ZenFS::GetFileInternal(std::string fname) {
+std::shared_ptr<ZoneFile> ZenFS::GetFileNoLock(std::string fname) {
   std::shared_ptr<ZoneFile> zoneFile(nullptr);
   if (files_.find(fname) != files_.end()) {
     zoneFile = files_[fname];
@@ -477,7 +477,7 @@ std::shared_ptr<ZoneFile> ZenFS::GetFileInternal(std::string fname) {
 std::shared_ptr<ZoneFile> ZenFS::GetFile(std::string fname) {
   std::shared_ptr<ZoneFile> zoneFile(nullptr);
   std::lock_guard<std::mutex> lock(files_mtx_);
-  zoneFile = GetFileInternal(fname);
+  zoneFile = GetFileNoLock(fname);
   return zoneFile;
 }
 
@@ -487,7 +487,7 @@ IOStatus ZenFS::DeleteFile(std::string fname) {
 
   {
     std::lock_guard<std::mutex> lock(files_mtx_);
-    zoneFile = GetFileInternal(fname);
+    zoneFile = GetFileNoLock(fname);
     if (zoneFile != nullptr) {
       std::string record;
 
@@ -1441,7 +1441,7 @@ IOStatus ZenFS::MigrateFileExtents(
     }
 
     // If the file doesn't exist, skip
-    if (GetFileInternal(fname) == nullptr) {
+    if (GetFileNoLock(fname) == nullptr) {
       Info(logger_, "Migrate file not exist anymore.");
       zbd_->ReleaseMigrateZone(target_zone);
       break;
