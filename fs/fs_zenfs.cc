@@ -613,14 +613,16 @@ IOStatus ZenFS::ReopenWritableFile(const std::string& fname,
   return OpenWritableFile(fname, file_opts, result, dbg, true);
 }
 
-IOStatus ZenFS::GetChildren(const std::string& dir, const IOOptions& options,
-                            std::vector<std::string>* result,
-                            IODebugContext* dbg) {
+/* Must hold files_mtx_ */
+IOStatus ZenFS::GetChildrenNoLock(const std::string& dir,
+                                  const IOOptions& options,
+                                  std::vector<std::string>* result,
+                                  IODebugContext* dbg) {
   std::map<std::string, std::shared_ptr<ZoneFile>>::iterator it;
   std::vector<std::string> auxfiles;
   IOStatus s;
 
-  Debug(logger_, "GetChildren: %s \n", dir.c_str());
+  Debug(logger_, "GetChildrenNoLock: %s \n", dir.c_str());
 
   s = target()->GetChildren(ToAuxPath(dir), options, &auxfiles, dbg);
   if (!s.ok()) {
@@ -637,7 +639,6 @@ IOStatus ZenFS::GetChildren(const std::string& dir, const IOOptions& options,
     if (f != "." && f != "..") result->push_back(f);
   }
 
-  std::lock_guard<std::mutex> lock(files_mtx_);
   for (it = files_.begin(); it != files_.end(); it++) {
     std::string fname = it->first;
     if (fname.rfind(dir, 0) == 0) {
@@ -654,6 +655,13 @@ IOStatus ZenFS::GetChildren(const std::string& dir, const IOOptions& options,
   }
 
   return s;
+}
+
+IOStatus ZenFS::GetChildren(const std::string& dir, const IOOptions& options,
+                            std::vector<std::string>* result,
+                            IODebugContext* dbg) {
+  std::lock_guard<std::mutex> lock(files_mtx_);
+  return GetChildrenNoLock(dir, options, result, dbg);
 }
 
 IOStatus ZenFS::OpenWritableFile(const std::string& fname,
