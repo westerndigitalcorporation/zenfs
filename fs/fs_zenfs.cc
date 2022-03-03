@@ -436,13 +436,13 @@ IOStatus ZenFS::SyncFileExtents(ZoneFile* zoneFile,
   return IOStatus::OK();
 }
 
-IOStatus ZenFS::SyncFileMetadata(ZoneFile* zoneFile, bool replace) {
+/* Must hold files_mtx_ */
+IOStatus ZenFS::SyncFileMetadataNoLock(ZoneFile* zoneFile, bool replace) {
   std::string fileRecord;
   std::string output;
   IOStatus s;
   ZenFSMetricsLatencyGuard guard(zbd_->GetMetrics(), ZENFS_META_SYNC_LATENCY,
                                  Env::Default());
-  std::lock_guard<std::mutex> lock(files_mtx_);
 
   if (zoneFile->IsDeleted()) {
     Info(logger_, "File %s has been deleted, skip sync file metadata!",
@@ -463,6 +463,11 @@ IOStatus ZenFS::SyncFileMetadata(ZoneFile* zoneFile, bool replace) {
   if (s.ok()) zoneFile->MetadataSynced();
 
   return s;
+}
+
+IOStatus ZenFS::SyncFileMetadata(ZoneFile* zoneFile, bool replace) {
+  std::lock_guard<std::mutex> lock(files_mtx_);
+  return SyncFileMetadataNoLock(zoneFile, replace);
 }
 
 /* Must hold files_mtx_ */

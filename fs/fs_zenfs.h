@@ -161,6 +161,13 @@ class ZenFS : public FileSystemWrapper {
   IOStatus PersistRecord(std::string record);
   IOStatus SyncFileExtents(ZoneFile* zoneFile,
                            std::vector<ZoneExtent*> new_extents);
+  /* Must hold files_mtx_ */
+  IOStatus SyncFileMetadataNoLock(ZoneFile* zoneFile, bool replace = false);
+  /* Must hold files_mtx_ */
+  IOStatus SyncFileMetadataNoLock(std::shared_ptr<ZoneFile> zoneFile,
+                                  bool replace = false) {
+    return SyncFileMetadataNoLock(zoneFile.get(), replace);
+  }
   IOStatus SyncFileMetadata(ZoneFile* zoneFile, bool replace = false);
   IOStatus SyncFileMetadata(std::shared_ptr<ZoneFile> zoneFile,
                             bool replace = false) {
