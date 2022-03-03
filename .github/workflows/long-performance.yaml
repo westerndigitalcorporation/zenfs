@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@v2
         with:
           repository: facebook/rocksdb
-          ref: v6.25.3
+          ref: v6.29.3
           path: harness/rocksdb-context/rocksdb
       - name: Checkout zenfs
         uses: actions/checkout@v2
