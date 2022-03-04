@@ -673,43 +673,48 @@ IOStatus ZenFS::OpenWritableFile(const std::string& fname,
                                  std::unique_ptr<FSWritableFile>* result,
                                  IODebugContext* dbg, bool reopen) {
   IOStatus s;
-  std::shared_ptr<ZoneFile> zoneFile = GetFile(fname);
+  bool resetIOZones = false;
+  {
+    std::lock_guard<std::mutex> file_lock(files_mtx_);
+    std::shared_ptr<ZoneFile> zoneFile = GetFileNoLock(fname);
 
-  /* if reopen is true and the file exists, return it */
-  if (reopen && zoneFile != nullptr) {
+    /* if reopen is true and the file exists, return it */
+    if (reopen && zoneFile != nullptr) {
+      result->reset(new ZonedWritableFile(zbd_, !file_opts.use_direct_writes,
+                                          zoneFile, &metadata_writer_));
+      return IOStatus::OK();
+    }
+
+    if (zoneFile != nullptr) {
+      s = DeleteFileNoLock(fname, file_opts.io_options, dbg);
+      if (!s.ok()) return s;
+      resetIOZones = true;
+    }
+
+    zoneFile = std::make_shared<ZoneFile>(zbd_, fname, next_file_id_++);
+    zoneFile->SetFileModificationTime(time(0));
+
+    /* RocksDB does not set the right io type(!)*/
+    if (ends_with(fname, ".log")) {
+      zoneFile->SetIOType(IOType::kWAL);
+      zoneFile->SetSparse(!file_opts.use_direct_writes);
+    } else {
+      zoneFile->SetIOType(IOType::kUnknown);
+    }
+
+    /* Persist the creation of the file */
+    s = SyncFileMetadataNoLock(zoneFile);
+    if (!s.ok()) {
+      zoneFile.reset();
+      return s;
+    }
+
+    files_.insert(std::make_pair(fname.c_str(), zoneFile));
     result->reset(new ZonedWritableFile(zbd_, !file_opts.use_direct_writes,
                                         zoneFile, &metadata_writer_));
-    return IOStatus::OK();
   }
 
-  if (zoneFile != nullptr) {
-    s = DeleteFile(fname, file_opts.io_options, dbg);
-    if (!s.ok()) return s;
-  }
-
-  zoneFile = std::make_shared<ZoneFile>(zbd_, fname, next_file_id_++);
-  zoneFile->SetFileModificationTime(time(0));
-
-  /* RocksDB does not set the right io type(!)*/
-  if (ends_with(fname, ".log")) {
-    zoneFile->SetIOType(IOType::kWAL);
-    zoneFile->SetSparse(!file_opts.use_direct_writes);
-  } else {
-    zoneFile->SetIOType(IOType::kUnknown);
-  }
-
-  /* Persist the creation of the file */
-  s = SyncFileMetadata(zoneFile);
-  if (!s.ok()) {
-    zoneFile.reset();
-    return s;
-  }
-
-  std::lock_guard<std::mutex> file_lock(files_mtx_);
-  files_.insert(std::make_pair(fname.c_str(), zoneFile));
-
-  result->reset(new ZonedWritableFile(zbd_, !file_opts.use_direct_writes,
-                                      zoneFile, &metadata_writer_));
+  if (resetIOZones) s = zbd_->ResetUnusedIOZones();
 
   return s;
 }
