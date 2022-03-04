@@ -771,9 +771,11 @@ IOStatus ZenFS::GetFileSize(const std::string& f, const IOOptions& options,
   return s;
 }
 
-IOStatus ZenFS::RenameFile(const std::string& source_path,
-                           const std::string& dest_path,
-                           const IOOptions& options, IODebugContext* dbg) {
+/* Must hold files_mtx_ */
+IOStatus ZenFS::RenameFileNoLock(const std::string& source_path,
+                                 const std::string& dest_path,
+                                 const IOOptions& options,
+                                 IODebugContext* dbg) {
   std::shared_ptr<ZoneFile> source_file(nullptr);
   std::shared_ptr<ZoneFile> existing_dest_file(nullptr);
   IOStatus s;
@@ -781,26 +783,23 @@ IOStatus ZenFS::RenameFile(const std::string& source_path,
   Debug(logger_, "Rename file: %s to : %s\n", source_path.c_str(),
         dest_path.c_str());
 
-  source_file = GetFile(source_path);
+  source_file = GetFileNoLock(source_path);
   if (source_file != nullptr) {
-    existing_dest_file = GetFile(dest_path);
+    existing_dest_file = GetFileNoLock(dest_path);
     if (existing_dest_file != nullptr) {
-      s = DeleteFile(dest_path, options, dbg);
+      s = DeleteFileNoLock(dest_path, options, dbg);
       if (!s.ok()) {
         return s;
       }
     }
 
-    files_mtx_.lock();
     files_.erase(source_path);
     source_file->Rename(dest_path);
     files_.insert(std::make_pair(dest_path, source_file));
-    files_mtx_.unlock();
 
-    s = SyncFileMetadata(source_file);
+    s = SyncFileMetadataNoLock(source_file);
     if (!s.ok()) {
       /* Failed to persist the rename, roll back */
-      std::lock_guard<std::mutex> lock(files_mtx_);
       files_.erase(dest_path);
       source_file->Rename(source_path);
       files_.insert(std::make_pair(source_path, source_file));
@@ -810,6 +809,18 @@ IOStatus ZenFS::RenameFile(const std::string& source_path,
                              options, dbg);
   }
 
+  return s;
+}
+
+IOStatus ZenFS::RenameFile(const std::string& source_path,
+                           const std::string& dest_path,
+                           const IOOptions& options, IODebugContext* dbg) {
+  IOStatus s;
+  {
+    std::lock_guard<std::mutex> lock(files_mtx_);
+    s = RenameFileNoLock(source_path, dest_path, options, dbg);
+  }
+  if (s.ok()) s = zbd_->ResetUnusedIOZones();
   return s;
 }
 
