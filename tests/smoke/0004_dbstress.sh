@@ -4,7 +4,7 @@ source smoke/common.sh
 OPS_PER_THREAD=1000
 REOPENS=5
 
-DB_STRESS_PARAMS="--ops_per_thread=$OPS_PER_THREAD --reopen=$REOPENS $FS_PARAMS"
+DB_STRESS_PARAMS="--ops_per_thread=$OPS_PER_THREAD --reopen=$REOPENS --db=dbname $FS_PARAMS"
 
 echo "# Running db_stress with parameters: $DB_STRESS_PARAMS" > $TEST_OUT
 $TOOLS_DIR/db_stress $DB_STRESS_PARAMS >> $TEST_OUT
