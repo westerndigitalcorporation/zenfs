@@ -15,7 +15,7 @@ jobs:
       - name: Clean
         run: rm -rf ${GITHUB_WORKSPACE}/*
       - name: Checkout build scripts
-        run: git clone ~/harness.git
+        run: git clone --branch 1.0.x ~/harness.git
       - name: Checkout zbdbench
         run: git clone ~/zbdbench.git harness/rocksdb-context/zbdbench
       - name: Checkout rocksdb
