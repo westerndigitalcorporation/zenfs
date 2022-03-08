@@ -55,6 +55,7 @@ class ZoneFile {
   ZonedBlockDevice* zbd_;
 
   std::vector<ZoneExtent*> extents_;
+  std::vector<std::string> linkfiles_;
 
   Zone* active_zone_;
   uint64_t extent_start_ = NO_EXTENT;
@@ -63,7 +64,6 @@ class ZoneFile {
   Env::WriteLifeTimeHint lifetime_;
   IOType io_type_; /* Only used when writing */
   uint64_t fileSize;
-  std::string filename_;
   uint64_t file_id_;
 
   uint32_t nr_synced_extents_ = 0;
@@ -80,8 +80,7 @@ class ZoneFile {
  public:
   static const int SPARSE_HEADER_SIZE = 8;
 
-  explicit ZoneFile(ZonedBlockDevice* zbd, std::string filename,
-                    uint64_t file_id_);
+  explicit ZoneFile(ZonedBlockDevice* zbd, uint64_t file_id_);
 
   virtual ~ZoneFile();
 
@@ -96,7 +95,6 @@ class ZoneFile {
   IOStatus SetWriteLifeTimeHint(Env::WriteLifeTimeHint lifetime);
   void SetIOType(IOType io_type);
   std::string GetFilename();
-  void Rename(std::string name);
   time_t GetFileModificationTime();
   void SetFileModificationTime(time_t mt);
   uint64_t GetFileSize();
@@ -140,6 +138,11 @@ class ZoneFile {
   IOStatus Recover();
 
   void ReplaceExtentList(std::vector<ZoneExtent*> new_list);
+  void AddLinkName(const std::string& linkfile);
+  IOStatus RemoveLinkName(const std::string& linkfile);
+  IOStatus RenameLink(const std::string& src, const std::string& dest);
+  uint32_t GetNrLinks() { return linkfiles_.size(); }
+  const std::vector<std::string>& GetLinkFiles() const { return linkfiles_; }
 
  private:
   void ReleaseActiveZone();

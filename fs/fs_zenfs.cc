@@ -499,14 +499,17 @@ IOStatus ZenFS::DeleteFileNoLock(std::string fname, const IOOptions& options,
     if (zoneFile->IsOpenForWR())
       return IOStatus::Busy("ZenFS::DeleteFileNoLock(): file open for writing:",
                             fname.c_str());
-    zoneFile = files_[fname];
     files_.erase(fname);
-    EncodeFileDeletionTo(zoneFile, &record);
+    s = zoneFile->RemoveLinkName(fname);
+    if (!s.ok()) return s;
+    EncodeFileDeletionTo(zoneFile, &record, fname);
     s = PersistRecord(record);
     if (!s.ok()) {
       /* Failed to persist the delete, return to a consistent state */
       files_.insert(std::make_pair(fname.c_str(), zoneFile));
+      zoneFile->AddLinkName(fname);
     } else {
+      if (zoneFile->GetNrLinks() > 0) return s;
       /* Mark up the file as deleted so it won't be migrated by GC */
       zoneFile->SetDeleted();
       zoneFile.reset();
@@ -693,8 +696,9 @@ IOStatus ZenFS::OpenWritableFile(const std::string& fname,
       resetIOZones = true;
     }
 
-    zoneFile = std::make_shared<ZoneFile>(zbd_, fname, next_file_id_++);
+    zoneFile = std::make_shared<ZoneFile>(zbd_, next_file_id_++);
     zoneFile->SetFileModificationTime(time(0));
+    zoneFile->AddLinkName(fname);
 
     /* RocksDB does not set the right io type(!)*/
     if (ends_with(fname, ".log")) {
@@ -793,15 +797,18 @@ IOStatus ZenFS::RenameFileNoLock(const std::string& source_path,
       }
     }
 
+    s = source_file->RenameLink(source_path, dest_path);
+    if (!s.ok()) return s;
     files_.erase(source_path);
-    source_file->Rename(dest_path);
+
     files_.insert(std::make_pair(dest_path, source_file));
 
     s = SyncFileMetadataNoLock(source_file);
     if (!s.ok()) {
       /* Failed to persist the rename, roll back */
       files_.erase(dest_path);
-      source_file->Rename(source_path);
+      s = source_file->RenameLink(dest_path, source_path);
+      if (!s.ok()) return s;
       files_.insert(std::make_pair(source_path, source_file));
     }
   } else {
@@ -821,6 +828,35 @@ IOStatus ZenFS::RenameFile(const std::string& source_path,
     s = RenameFileNoLock(source_path, dest_path, options, dbg);
   }
   if (s.ok()) s = zbd_->ResetUnusedIOZones();
+  return s;
+}
+
+IOStatus ZenFS::LinkFile(const std::string& fname, const std::string& lname,
+                         const IOOptions& options, IODebugContext* dbg) {
+  std::shared_ptr<ZoneFile> src_file(nullptr);
+  IOStatus s;
+
+  Debug(logger_, "LinkFile: %s to %s\n", fname.c_str(), lname.c_str());
+  {
+    std::lock_guard<std::mutex> lock(files_mtx_);
+
+    if (GetFileNoLock(lname) != nullptr)
+      return IOStatus::InvalidArgument("Failed to create link, target exists");
+
+    src_file = GetFileNoLock(fname);
+    if (src_file != nullptr) {
+      src_file->AddLinkName(lname);
+      files_.insert(std::make_pair(lname, src_file));
+      s = SyncFileMetadataNoLock(src_file);
+      if (!s.ok()) {
+        s = src_file->RemoveLinkName(lname);
+        if (!s.ok()) return s;
+        files_.erase(lname);
+      }
+      return s;
+    }
+  }
+  s = target()->LinkFile(ToAuxPath(fname), ToAuxPath(lname), options, dbg);
   return s;
 }
 
@@ -853,7 +889,7 @@ void ZenFS::EncodeJson(std::ostream& json_stream) {
 }
 
 Status ZenFS::DecodeFileUpdateFrom(Slice* slice, bool replace) {
-  std::shared_ptr<ZoneFile> update(new ZoneFile(zbd_, "not_set", 0));
+  std::shared_ptr<ZoneFile> update(new ZoneFile(zbd_, 0));
   uint64_t id;
   Status s;
 
@@ -867,17 +903,20 @@ Status ZenFS::DecodeFileUpdateFrom(Slice* slice, bool replace) {
   for (auto it = files_.begin(); it != files_.end(); it++) {
     std::shared_ptr<ZoneFile> zFile = it->second;
     if (id == zFile->GetID()) {
-      std::string oldName = zFile->GetFilename();
+      for (const auto& name : zFile->GetLinkFiles()) {
+        if (files_.find(name) != files_.end())
+          files_.erase(name);
+        else
+          return Status::Corruption("DecodeFileUpdateFrom: missing link file");
+      }
 
       s = zFile->MergeUpdate(update, replace);
       update.reset();
 
       if (!s.ok()) return s;
 
-      if (zFile->GetFilename() != oldName) {
-        files_.erase(oldName);
-        files_.insert(std::make_pair(zFile->GetFilename(), zFile));
-      }
+      for (const auto& name : zFile->GetLinkFiles())
+        files_.insert(std::make_pair(name, zFile));
 
       return Status::OK();
     }
@@ -896,24 +935,26 @@ Status ZenFS::DecodeSnapshotFrom(Slice* input) {
   assert(files_.size() == 0);
 
   while (GetLengthPrefixedSlice(input, &slice)) {
-    std::shared_ptr<ZoneFile> zoneFile(new ZoneFile(zbd_, "not_set", 0));
+    std::shared_ptr<ZoneFile> zoneFile(new ZoneFile(zbd_, 0));
     Status s = zoneFile->DecodeFrom(&slice);
     if (!s.ok()) return s;
 
-    files_.insert(std::make_pair(zoneFile->GetFilename(), zoneFile));
     if (zoneFile->GetID() >= next_file_id_)
       next_file_id_ = zoneFile->GetID() + 1;
+
+    for (const auto& name : zoneFile->GetLinkFiles())
+      files_.insert(std::make_pair(name, zoneFile));
   }
 
   return Status::OK();
 }
 
 void ZenFS::EncodeFileDeletionTo(std::shared_ptr<ZoneFile> zoneFile,
-                                 std::string* output) {
+                                 std::string* output, std::string linkf) {
   std::string file_string;
 
   PutFixed64(&file_string, zoneFile->GetID());
-  PutLengthPrefixedSlice(&file_string, Slice(zoneFile->GetFilename()));
+  PutLengthPrefixedSlice(&file_string, Slice(linkf));
 
   PutFixed32(output, kFileDeletion);
   PutLengthPrefixedSlice(output, Slice(file_string));
@@ -923,6 +964,7 @@ Status ZenFS::DecodeFileDeletionFrom(Slice* input) {
   uint64_t fileID;
   std::string fileName;
   Slice slice;
+  IOStatus s;
 
   if (!GetFixed64(input, &fileID))
     return Status::Corruption("Zone file deletion: file id missing");
@@ -939,7 +981,9 @@ Status ZenFS::DecodeFileDeletionFrom(Slice* input) {
     return Status::Corruption("Zone file deletion: file ID missmatch");
 
   files_.erase(fileName);
-  zoneFile.reset();
+  s = zoneFile->RemoveLinkName(fileName);
+  if (!s.ok())
+    return Status::Corruption("Zone file deletion: file links missmatch");
 
   return Status::OK();
 }

@@ -55,21 +55,19 @@ void ZoneExtent::EncodeJson(std::ostream& json_stream) {
 
 enum ZoneFileTag : uint32_t {
   kFileID = 1,
-  kFileName = 2,
+  kFileNameDeprecated = 2,
   kFileSize = 3,
   kWriteLifeTimeHint = 4,
   kExtent = 5,
   kModificationTime = 6,
   kActiveExtentStart = 7,
   kIsSparse = 8,
+  kLinkedFilename = 9,
 };
 
 void ZoneFile::EncodeTo(std::string* output, uint32_t extent_start) {
   PutFixed32(output, kFileID);
   PutFixed64(output, file_id_);
-
-  PutFixed32(output, kFileName);
-  PutLengthPrefixedSlice(output, Slice(filename_));
 
   PutFixed32(output, kFileSize);
   PutFixed64(output, fileSize);
@@ -99,15 +97,22 @@ void ZoneFile::EncodeTo(std::string* output, uint32_t extent_start) {
   if (is_sparse_) {
     PutFixed32(output, kIsSparse);
   }
+
+  for (uint32_t i = 0; i < linkfiles_.size(); i++) {
+    PutFixed32(output, kLinkedFilename);
+    PutLengthPrefixedSlice(output, Slice(linkfiles_[i]));
+  }
 }
 
 void ZoneFile::EncodeJson(std::ostream& json_stream) {
   json_stream << "{";
   json_stream << "\"id\":" << file_id_ << ",";
-  json_stream << "\"filename\":\"" << filename_ << "\",";
   json_stream << "\"size\":" << fileSize << ",";
   json_stream << "\"hint\":" << lifetime_ << ",";
   json_stream << "\"extents\":[";
+
+  for (const auto& name : GetLinkFiles())
+    json_stream << "\"filename\":\"" << name << "\",";
 
   bool first_element = true;
   for (ZoneExtent* extent : extents_) {
@@ -136,13 +141,6 @@ Status ZoneFile::DecodeFrom(Slice* input) {
     if (!GetFixed32(input, &tag)) break;
 
     switch (tag) {
-      case kFileName:
-        if (!GetLengthPrefixedSlice(input, &slice))
-          return Status::Corruption("ZoneFile", "Filename missing");
-        filename_ = slice.ToString();
-        if (filename_.length() == 0)
-          return Status::Corruption("ZoneFile", "Zero length filename");
-        break;
       case kFileSize:
         if (!GetFixed64(input, &fileSize))
           return Status::Corruption("ZoneFile", "Missing file size");
@@ -182,6 +180,15 @@ Status ZoneFile::DecodeFrom(Slice* input) {
       case kIsSparse:
         is_sparse_ = true;
         break;
+      case kLinkedFilename:
+        if (!GetLengthPrefixedSlice(input, &slice))
+          return Status::Corruption("ZoneFile", "LinkFilename missing");
+
+        if (slice.ToString().length() == 0)
+          return Status::Corruption("ZoneFile", "Zero length Linkfilename");
+
+        linkfiles_.push_back(slice.ToString());
+        break;
       default:
         return Status::Corruption("ZoneFile", "Unexpected tag");
     }
@@ -195,7 +202,6 @@ Status ZoneFile::MergeUpdate(std::shared_ptr<ZoneFile> update, bool replace) {
   if (file_id_ != update->GetID())
     return Status::Corruption("ZoneFile update", "ID missmatch");
 
-  Rename(update->GetFilename());
   SetFileSize(update->GetFileSize());
   SetWriteLifeTimeHint(update->GetWriteLifeTimeHint());
   SetFileModificationTime(update->GetFileModificationTime());
@@ -215,11 +221,13 @@ Status ZoneFile::MergeUpdate(std::shared_ptr<ZoneFile> update, bool replace) {
   is_sparse_ = update->IsSparse();
   MetadataSynced();
 
+  linkfiles_.clear();
+  for (const auto& name : update->GetLinkFiles()) linkfiles_.push_back(name);
+
   return Status::OK();
 }
 
-ZoneFile::ZoneFile(ZonedBlockDevice* zbd, std::string filename,
-                   uint64_t file_id)
+ZoneFile::ZoneFile(ZonedBlockDevice* zbd, uint64_t file_id)
     : zbd_(zbd),
       active_zone_(NULL),
       extent_start_(NO_EXTENT),
@@ -227,13 +235,11 @@ ZoneFile::ZoneFile(ZonedBlockDevice* zbd, std::string filename,
       lifetime_(Env::WLTH_NOT_SET),
       io_type_(IOType::kUnknown),
       fileSize(0),
-      filename_(filename),
       file_id_(file_id),
       nr_synced_extents_(0),
       m_time_(0) {}
 
-std::string ZoneFile::GetFilename() { return filename_; }
-void ZoneFile::Rename(std::string name) { filename_ = name; }
+std::string ZoneFile::GetFilename() { return linkfiles_[0]; }
 time_t ZoneFile::GetFileModificationTime() { return m_time_; }
 
 uint64_t ZoneFile::GetFileSize() { return fileSize; }
@@ -703,6 +709,32 @@ void ZoneFile::ReplaceExtentList(std::vector<ZoneExtent*> new_list) {
 
   WriteLock lck(this);
   extents_ = new_list;
+}
+
+void ZoneFile::AddLinkName(const std::string& linkf) {
+  linkfiles_.push_back(linkf);
+}
+
+IOStatus ZoneFile::RenameLink(const std::string& src, const std::string& dest) {
+  auto itr = std::find(linkfiles_.begin(), linkfiles_.end(), src);
+  if (itr != linkfiles_.end()) {
+    linkfiles_.erase(itr);
+    linkfiles_.push_back(dest);
+  } else {
+    return IOStatus::IOError("RenameLink: Failed to find the linked file");
+  }
+  return IOStatus::OK();
+}
+
+IOStatus ZoneFile::RemoveLinkName(const std::string& linkf) {
+  assert(GetNrLinks());
+  auto itr = std::find(linkfiles_.begin(), linkfiles_.end(), linkf);
+  if (itr != linkfiles_.end()) {
+    linkfiles_.erase(itr);
+  } else {
+    return IOStatus::IOError("RemoveLinkInfo: Failed to find the link file");
+  }
+  return IOStatus::OK();
 }
 
 IOStatus ZoneFile::SetWriteLifeTimeHint(Env::WriteLifeTimeHint lifetime) {
