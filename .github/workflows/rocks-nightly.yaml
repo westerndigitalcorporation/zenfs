@@ -2,10 +2,17 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '0 01 * * *'
-name: Smoke RocksDB master
+name: Smoke RocksDB Nightly
 jobs:
-  smoke-rocks-master:
+  smoke-nightly:
     runs-on: self-hosted
+    name: Smoke Nightly ${{ matrix.rocksdb-ref }}
+    strategy:
+      matrix:
+        rocksdb-ref:
+          - main
+          - 7.0.fb
+          - 6.29.fb
     steps:
       - name: Clean
         run: rm -rf ${GITHUB_WORKSPACE}/*
@@ -17,7 +24,7 @@ jobs:
         uses: actions/checkout@v2
         with:
           repository: facebook/rocksdb
-          ref: main
+          ref: ${{ matrix.rocksdb-ref }}
           path: harness/rocksdb-context/rocksdb
       - name: Checkout zenfs
         uses: actions/checkout@v2
