@@ -176,7 +176,7 @@ class ZenFS : public FileSystemWrapper {
 
   void EncodeSnapshotTo(std::string* output);
   void EncodeFileDeletionTo(std::shared_ptr<ZoneFile> zoneFile,
-                            std::string* output);
+                            std::string* output, std::string linkf);
 
   Status DecodeSnapshotFrom(Slice* input);
   Status DecodeFileUpdateFrom(Slice* slice, bool replace = false);
@@ -266,6 +266,10 @@ class ZenFS : public FileSystemWrapper {
   virtual IOStatus DeleteFile(const std::string& fname,
                               const IOOptions& options,
                               IODebugContext* dbg) override;
+  virtual IOStatus LinkFile(const std::string& fname, const std::string& lname,
+                            const IOOptions& options,
+                            IODebugContext* dbg) override;
+
   IOStatus GetFileSize(const std::string& f, const IOOptions& options,
                        uint64_t* size, IODebugContext* dbg) override;
   IOStatus RenameFile(const std::string& f, const std::string& t,
@@ -380,13 +384,6 @@ class ZenFS : public FileSystemWrapper {
       std::unique_ptr<MemoryMappedFileBuffer>* /*result*/) override {
     return IOStatus::NotSupported(
         "MemoryMappedFileBuffer is not implemented in ZenFS");
-  }
-
-  virtual IOStatus LinkFile(const std::string& /*src*/,
-                            const std::string& /*target*/,
-                            const IOOptions& /*options*/,
-                            IODebugContext* /*dbg*/) override {
-    return IOStatus::NotSupported("LinkFile is not supported in ZenFS");
   }
 
   virtual IOStatus NumFileLinks(const std::string& /*fname*/,
