@@ -879,6 +879,31 @@ IOStatus ZenFS::NumFileLinks(const std::string& fname, const IOOptions& options,
   return s;
 }
 
+IOStatus ZenFS::AreFilesSame(const std::string& fname, const std::string& link,
+                             const IOOptions& options, bool* res,
+                             IODebugContext* dbg) {
+  std::shared_ptr<ZoneFile> src_file(nullptr);
+  std::shared_ptr<ZoneFile> dst_file(nullptr);
+  IOStatus s;
+
+  Debug(logger_, "AreFilesSame: %s, %s\n", fname.c_str(), link.c_str());
+
+  {
+    std::lock_guard<std::mutex> lock(files_mtx_);
+    src_file = GetFileNoLock(fname);
+    dst_file = GetFileNoLock(link);
+    if (src_file != nullptr && dst_file != nullptr) {
+      if (src_file->GetID() == dst_file->GetID())
+        *res = true;
+      else
+        *res = false;
+      return IOStatus::OK();
+    }
+  }
+  s = target()->AreFilesSame(fname, link, options, res, dbg);
+  return s;
+}
+
 void ZenFS::EncodeSnapshotTo(std::string* output) {
   std::map<std::string, std::shared_ptr<ZoneFile>>::iterator it;
   std::string files_string;

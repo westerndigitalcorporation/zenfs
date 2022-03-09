@@ -272,6 +272,10 @@ class ZenFS : public FileSystemWrapper {
   virtual IOStatus NumFileLinks(const std::string& fname,
                                 const IOOptions& options, uint64_t* nr_links,
                                 IODebugContext* dbg) override;
+  virtual IOStatus AreFilesSame(const std::string& fname,
+                                const std::string& link,
+                                const IOOptions& options, bool* res,
+                                IODebugContext* dbg) override;
 
   IOStatus GetFileSize(const std::string& f, const IOOptions& options,
                        uint64_t* size, IODebugContext* dbg) override;
@@ -387,13 +391,6 @@ class ZenFS : public FileSystemWrapper {
       std::unique_ptr<MemoryMappedFileBuffer>* /*result*/) override {
     return IOStatus::NotSupported(
         "MemoryMappedFileBuffer is not implemented in ZenFS");
-  }
-
-  virtual IOStatus AreFilesSame(const std::string& /*first*/,
-                                const std::string& /*second*/,
-                                const IOOptions& /*options*/, bool* /*res*/,
-                                IODebugContext* /*dbg*/) override {
-    return IOStatus::NotSupported("AreFilesSame is not supported in ZenFS");
   }
 
   void GetZenFSSnapshot(ZenFSSnapshot& snapshot,
