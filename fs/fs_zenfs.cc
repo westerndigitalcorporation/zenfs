@@ -860,6 +860,25 @@ IOStatus ZenFS::LinkFile(const std::string& fname, const std::string& lname,
   return s;
 }
 
+IOStatus ZenFS::NumFileLinks(const std::string& fname, const IOOptions& options,
+                             uint64_t* nr_links, IODebugContext* dbg) {
+  std::shared_ptr<ZoneFile> src_file(nullptr);
+  IOStatus s;
+
+  Debug(logger_, "NumFileLinks: %s\n", fname.c_str());
+  {
+    std::lock_guard<std::mutex> lock(files_mtx_);
+
+    src_file = GetFileNoLock(fname);
+    if (src_file != nullptr) {
+      *nr_links = (uint64_t)src_file->GetNrLinks();
+      return IOStatus::OK();
+    }
+  }
+  s = target()->NumFileLinks(ToAuxPath(fname), options, nr_links, dbg);
+  return s;
+}
+
 void ZenFS::EncodeSnapshotTo(std::string* output) {
   std::map<std::string, std::shared_ptr<ZoneFile>>::iterator it;
   std::string files_string;
