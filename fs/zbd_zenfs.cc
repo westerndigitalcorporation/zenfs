@@ -237,6 +237,10 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   if (!readonly && !exclusive)
     return IOStatus::InvalidArgument("Write opens must be exclusive");
 
+  // Enable error logging in libzbd before using libzbd apis.
+  // Change to ZBD_LOG_DEBUG for more verbose logging.
+  zbd_set_log_level(ZBD_LOG_ERROR);
+
   /* The non-direct file descriptor acts as an exclusive-use semaphore */
   if (exclusive) {
     read_f_ = zbd_open(filename_.c_str(), O_RDONLY | O_EXCL, &info);
