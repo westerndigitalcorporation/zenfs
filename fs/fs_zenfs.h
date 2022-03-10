@@ -213,6 +213,16 @@ class ZenFS : public FileSystemWrapper {
 
   IOStatus Repair();
 
+  /* Must hold files_mtx_ */
+  IOStatus IsDirectoryNoLock(const std::string& path, const IOOptions& options,
+                             bool* is_dir, IODebugContext* dbg) {
+    if (GetFileNoLock(path) != nullptr) {
+      *is_dir = false;
+      return IOStatus::OK();
+    }
+    return target()->IsDirectory(ToAuxPath(path), options, is_dir, dbg);
+  }
+
  protected:
   IOStatus OpenWritableFile(const std::string& fname,
                             const FileOptions& file_opts,
@@ -297,11 +307,8 @@ class ZenFS : public FileSystemWrapper {
 
   IOStatus IsDirectory(const std::string& path, const IOOptions& options,
                        bool* is_dir, IODebugContext* dbg) override {
-    if (GetFile(path) != nullptr) {
-      *is_dir = false;
-      return IOStatus::OK();
-    }
-    return target()->IsDirectory(ToAuxPath(path), options, is_dir, dbg);
+    std::lock_guard<std::mutex> lock(files_mtx_);
+    return IsDirectoryNoLock(path, options, is_dir, dbg);
   }
 
   IOStatus NewDirectory(const std::string& name, const IOOptions& io_opts,
