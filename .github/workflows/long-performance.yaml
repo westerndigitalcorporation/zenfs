@@ -18,7 +18,11 @@ jobs:
       - name: Checkout build scripts
         run: git clone ~/harness.git
       - name: Checkout zbdbench
-        run: git clone ~/zbdbench.git harness/rocksdb-context/zbdbench
+        uses: actions/checkout@v2
+        with:
+          repository: westerndigitalcorporation/zbdbench
+          ref: v0.1.1
+          path: harness/rocksdb-context/zbdbench
       - name: Checkout rocksdb
         uses: actions/checkout@v2
         with:
