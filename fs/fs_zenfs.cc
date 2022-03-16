@@ -15,6 +15,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <filesystem>
 #include <sstream>
 #include <utility>
 #include <vector>
@@ -621,11 +622,44 @@ IOStatus ZenFS::ReopenWritableFile(const std::string& fname,
 }
 
 /* Must hold files_mtx_ */
+void ZenFS::GetZenFSChildrenNoLock(const std::string& dir,
+                                   bool include_grandchildren,
+                                   std::vector<std::string>* result) {
+  auto path_as_string_with_separator_at_end =
+      [](std::filesystem::path const& path) {
+        auto with_sep = path / "";
+        return with_sep.lexically_normal().string();
+      };
+
+  auto string_starts_with = [](std::string const& string,
+                               std::string const& needle) {
+    return string.rfind(needle, 0) == 0;
+  };
+
+  std::string dir_with_terminating_seperator =
+      path_as_string_with_separator_at_end(std::filesystem::path(dir));
+
+  for (auto const& it : files_) {
+    std::filesystem::path file_path(it.first);
+    assert(file_path.has_filename());
+
+    std::string file_dir =
+        path_as_string_with_separator_at_end(file_path.parent_path());
+
+    if (string_starts_with(file_dir, dir_with_terminating_seperator)) {
+      if (include_grandchildren ||
+          file_dir.length() == dir_with_terminating_seperator.length()) {
+        result->push_back(file_path.filename().string());
+      }
+    }
+  }
+}
+
+/* Must hold files_mtx_ */
 IOStatus ZenFS::GetChildrenNoLock(const std::string& dir,
                                   const IOOptions& options,
                                   std::vector<std::string>* result,
                                   IODebugContext* dbg) {
-  std::map<std::string, std::shared_ptr<ZoneFile>>::iterator it;
   std::vector<std::string> auxfiles;
   IOStatus s;
 
@@ -646,22 +680,7 @@ IOStatus ZenFS::GetChildrenNoLock(const std::string& dir,
     if (f != "." && f != "..") result->push_back(f);
   }
 
-  for (it = files_.begin(); it != files_.end(); it++) {
-    std::string fname = it->first;
-    if (fname.rfind(dir, 0) == 0) {
-      if (dir.back() == '/') {
-        fname.erase(0, dir.length());
-      } else {
-        if (dir.size() > 0) {
-          fname.erase(0, dir.length() + 1);
-        }
-      }
-      // Don't report grandchildren
-      if (fname.find("/") == std::string::npos) {
-        result->push_back(fname);
-      }
-    }
-  }
+  GetZenFSChildrenNoLock(dir, false, result);
 
   return s;
 }
