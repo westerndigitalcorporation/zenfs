@@ -204,6 +204,24 @@ class ZenFS : public FileSystemWrapper {
   IOStatus GetChildrenNoLock(const std::string& dir, const IOOptions& options,
                              std::vector<std::string>* result,
                              IODebugContext* dbg);
+
+  /* Must hold files_mtx_ */
+  IOStatus RenameChildNoLock(std::string const& source_dir,
+                             std::string const& dest_dir,
+                             std::string const& child, const IOOptions& options,
+                             IODebugContext* dbg);
+
+  /* Must hold files_mtx_ */
+  IOStatus RollbackAuxDirRenameNoLock(
+      const std::string& source_path, const std::string& dest_path,
+      const std::vector<std::string>& renamed_children,
+      const IOOptions& options, IODebugContext* dbg);
+
+  /* Must hold files_mtx_ */
+  IOStatus RenameAuxPathNoLock(const std::string& source_path,
+                               const std::string& dest_path,
+                               const IOOptions& options, IODebugContext* dbg);
+
   /* Must hold files_mtx_ */
   IOStatus RenameFileNoLock(const std::string& f, const std::string& t,
                             const IOOptions& options, IODebugContext* dbg);
