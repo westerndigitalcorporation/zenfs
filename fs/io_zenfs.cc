@@ -70,7 +70,7 @@ void ZoneFile::EncodeTo(std::string* output, uint32_t extent_start) {
   PutFixed64(output, file_id_);
 
   PutFixed32(output, kFileSize);
-  PutFixed64(output, fileSize);
+  PutFixed64(output, file_size_);
 
   PutFixed32(output, kWriteLifeTimeHint);
   PutFixed32(output, (uint32_t)lifetime_);
@@ -107,7 +107,7 @@ void ZoneFile::EncodeTo(std::string* output, uint32_t extent_start) {
 void ZoneFile::EncodeJson(std::ostream& json_stream) {
   json_stream << "{";
   json_stream << "\"id\":" << file_id_ << ",";
-  json_stream << "\"size\":" << fileSize << ",";
+  json_stream << "\"size\":" << file_size_ << ",";
   json_stream << "\"hint\":" << lifetime_ << ",";
   json_stream << "\"extents\":[";
 
@@ -142,7 +142,7 @@ Status ZoneFile::DecodeFrom(Slice* input) {
 
     switch (tag) {
       case kFileSize:
-        if (!GetFixed64(input, &fileSize))
+        if (!GetFixed64(input, &file_size_))
           return Status::Corruption("ZoneFile", "Missing file size");
         break;
       case kWriteLifeTimeHint:
@@ -234,7 +234,7 @@ ZoneFile::ZoneFile(ZonedBlockDevice* zbd, uint64_t file_id)
       extent_filepos_(0),
       lifetime_(Env::WLTH_NOT_SET),
       io_type_(IOType::kUnknown),
-      fileSize(0),
+      file_size_(0),
       file_id_(file_id),
       nr_synced_extents_(0),
       m_time_(0) {}
@@ -242,8 +242,8 @@ ZoneFile::ZoneFile(ZonedBlockDevice* zbd, uint64_t file_id)
 std::string ZoneFile::GetFilename() { return linkfiles_[0]; }
 time_t ZoneFile::GetFileModificationTime() { return m_time_; }
 
-uint64_t ZoneFile::GetFileSize() { return fileSize; }
-void ZoneFile::SetFileSize(uint64_t sz) { fileSize = sz; }
+uint64_t ZoneFile::GetFileSize() { return file_size_; }
+void ZoneFile::SetFileSize(uint64_t sz) { file_size_ = sz; }
 void ZoneFile::SetFileModificationTime(time_t mt) { m_time_ = mt; }
 void ZoneFile::SetIOType(IOType io_type) { io_type_ = io_type; }
 
@@ -339,7 +339,7 @@ IOStatus ZoneFile::PositionedRead(uint64_t offset, size_t n, Slice* result,
   uint64_t extent_end;
   IOStatus s;
 
-  if (offset >= fileSize) {
+  if (offset >= file_size_) {
     *result = Slice(scratch, 0);
     return IOStatus::OK();
   }
@@ -354,8 +354,8 @@ IOStatus ZoneFile::PositionedRead(uint64_t offset, size_t n, Slice* result,
   extent_end = extent->start_ + extent->length_;
 
   /* Limit read size to end of file */
-  if ((offset + n) > fileSize)
-    r_sz = fileSize - offset;
+  if ((offset + n) > file_size_)
+    r_sz = file_size_ - offset;
   else
     r_sz = n;
 
@@ -426,11 +426,11 @@ IOStatus ZoneFile::PositionedRead(uint64_t offset, size_t n, Slice* result,
 void ZoneFile::PushExtent() {
   uint64_t length;
 
-  assert(fileSize >= extent_filepos_);
+  assert(file_size_ >= extent_filepos_);
 
   if (!active_zone_) return;
 
-  length = fileSize - extent_filepos_;
+  length = file_size_ - extent_filepos_;
   if (length == 0) return;
 
   assert(length <= (active_zone_->wp_ - extent_start_));
@@ -438,7 +438,7 @@ void ZoneFile::PushExtent() {
 
   active_zone_->used_capacity_ += length;
   extent_start_ = active_zone_->wp_;
-  extent_filepos_ = fileSize;
+  extent_filepos_ = file_size_;
 }
 
 IOStatus ZoneFile::AllocateNewZone() {
@@ -451,7 +451,7 @@ IOStatus ZoneFile::AllocateNewZone() {
   }
   SetActiveZone(zone);
   extent_start_ = active_zone_->wp_;
-  extent_filepos_ = fileSize;
+  extent_filepos_ = file_size_;
 
   /* Persist metadata so we can recover the active extent using
      the zone write pointer in case there is a crash before syncing */
@@ -493,7 +493,7 @@ IOStatus ZoneFile::BufferedAppend(char* buffer, uint32_t data_size) {
 
     extent_start_ = active_zone_->wp_;
     active_zone_->used_capacity_ += extent_length;
-    fileSize += extent_length;
+    file_size_ += extent_length;
     left -= extent_length;
 
     if (active_zone_->capacity_ == 0) {
@@ -551,7 +551,7 @@ IOStatus ZoneFile::SparseAppend(char* sparse_buffer, uint32_t data_size) {
 
     extent_start_ = active_zone_->wp_;
     active_zone_->used_capacity_ += extent_length;
-    fileSize += extent_length;
+    file_size_ += extent_length;
     left -= extent_length;
 
     if (active_zone_->capacity_ == 0) {
@@ -601,7 +601,7 @@ IOStatus ZoneFile::Append(void* data, int data_size) {
     s = active_zone_->Append((char*)data + offset, wr_size);
     if (!s.ok()) return s;
 
-    fileSize += wr_size;
+    file_size_ += wr_size;
     left -= wr_size;
     offset += wr_size;
   }
@@ -695,9 +695,9 @@ IOStatus ZoneFile::Recover() {
   extent_start_ = NO_EXTENT;
 
   /* Recalculate file size */
-  fileSize = 0;
+  file_size_ = 0;
   for (uint32_t i = 0; i < extents_.size(); i++) {
-    fileSize += extents_[i]->length_;
+    file_size_ += extents_[i]->length_;
   }
 
   return IOStatus::OK();
