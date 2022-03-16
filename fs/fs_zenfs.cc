@@ -795,6 +795,80 @@ IOStatus ZenFS::GetFileSize(const std::string& f, const IOOptions& options,
 }
 
 /* Must hold files_mtx_ */
+IOStatus ZenFS::RenameChildNoLock(std::string const& source_dir,
+                                  std::string const& dest_dir,
+                                  std::string const& child,
+                                  const IOOptions& options,
+                                  IODebugContext* dbg) {
+  std::string source_child =
+      (std::filesystem::path(source_dir) / std::filesystem::path(child))
+          .string();
+  std::string dest_child =
+      (std::filesystem::path(dest_dir) / std::filesystem::path(child)).string();
+  return RenameFileNoLock(source_child, dest_child, options, dbg);
+}
+
+/* Must hold files_mtx_ */
+IOStatus ZenFS::RollbackAuxDirRenameNoLock(
+    const std::string& source_path, const std::string& dest_path,
+    const std::vector<std::string>& renamed_children, const IOOptions& options,
+    IODebugContext* dbg) {
+  IOStatus s;
+
+  for (const auto& rollback_child : renamed_children) {
+    s = RenameChildNoLock(dest_path, source_path, rollback_child, options, dbg);
+    if (!s.ok()) {
+      return IOStatus::Corruption(
+          "RollbackAuxDirRenameNoLock: Failed to roll back directory rename");
+    }
+  }
+
+  s = target()->RenameFile(ToAuxPath(dest_path), ToAuxPath(source_path),
+                           options, dbg);
+  if (!s.ok()) {
+    return IOStatus::Corruption(
+        "RollbackAuxDirRenameNoLock: Failed to roll back auxiliary path "
+        "renaming");
+  }
+
+  return s;
+}
+
+/* Must hold files_mtx_ */
+IOStatus ZenFS::RenameAuxPathNoLock(const std::string& source_path,
+                                    const std::string& dest_path,
+                                    const IOOptions& options,
+                                    IODebugContext* dbg) {
+  IOStatus s;
+  std::vector<std::string> children;
+  std::vector<std::string> renamed_children;
+
+  s = target()->RenameFile(ToAuxPath(source_path), ToAuxPath(dest_path),
+                           options, dbg);
+  if (!s.ok()) {
+    return s;
+  }
+
+  GetZenFSChildrenNoLock(source_path, true, &children);
+
+  for (const auto& child : children) {
+    s = RenameChildNoLock(source_path, dest_path, child, options, dbg);
+    if (!s.ok()) {
+      IOStatus failed_rename = s;
+      s = RollbackAuxDirRenameNoLock(source_path, dest_path, renamed_children,
+                                     options, dbg);
+      if (!s.ok()) {
+        return s;
+      }
+      return failed_rename;
+    }
+    renamed_children.push_back(child);
+  }
+
+  return s;
+}
+
+/* Must hold files_mtx_ */
 IOStatus ZenFS::RenameFileNoLock(const std::string& source_path,
                                  const std::string& dest_path,
                                  const IOOptions& options,
@@ -831,8 +905,7 @@ IOStatus ZenFS::RenameFileNoLock(const std::string& source_path,
       files_.insert(std::make_pair(source_path, source_file));
     }
   } else {
-    s = target()->RenameFile(ToAuxPath(source_path), ToAuxPath(dest_path),
-                             options, dbg);
+    s = RenameAuxPathNoLock(source_path, dest_path, options, dbg);
   }
 
   return s;
