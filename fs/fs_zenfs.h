@@ -197,6 +197,10 @@ class ZenFS : public FileSystemWrapper {
   /* Must hold files_mtx_ */
   std::shared_ptr<ZoneFile> GetFileNoLock(std::string fname);
   /* Must hold files_mtx_ */
+  void GetZenFSChildrenNoLock(const std::string& dir,
+                              bool include_grandchildren,
+                              std::vector<std::string>* result);
+  /* Must hold files_mtx_ */
   IOStatus GetChildrenNoLock(const std::string& dir, const IOOptions& options,
                              std::vector<std::string>* result,
                              IODebugContext* dbg);
