@@ -67,6 +67,28 @@ This is done with the zenfs utility, using the mkfs command:
 ./plugin/zenfs/util/zenfs mkfs --zbd=<zoned block device> --aux_path=<path to store LOG and LOCK files>
 ```
 
+## Test
+
+ZenFS uses RocksDB gtest infrastructure for testing. See
+[gtest](https://google.github.io/googletest/) documentation for details on the
+test framework and how to add tests. ZenFS tests require a zoned block device to operate. Pass the name of the device in the `DEVICE` environment variable. You do not need to create a ZenFS filesystem on the device, the test will do that. *Note that all data on the device will be lost*.
+
+To run all RocksDB tests:
+
+```shell
+make DEBUG_LEVEL=1 ROCKSDB_PLUGINS=zenfs DEVICE=nullb0 check
+```
+See RocksDB `Makefile` for details on the `check` target.
+
+To build a single test:
+```shell
+make DEBUG_LEVEL=1 ROCKSDB_PLUGINS=zenfs fs_zenfs_test
+```
+
+To run the test, set `DEVICE` environment variable and execute the test:
+```shell
+DEVICE=null0 ./fs_zenfs_test
+```
 ## ZenFS on-disk file formats
 
 ZenFS Version 1.0.0 and earlier uses version 1 of the on-disk format.
