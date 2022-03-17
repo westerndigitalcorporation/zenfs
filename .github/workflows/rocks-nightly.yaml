@@ -12,7 +12,6 @@ jobs:
         rocksdb-ref:
           - main
           - 7.0.fb
-          - 6.29.fb
     steps:
       - name: Clean
         run: rm -rf ${GITHUB_WORKSPACE}/*
