@@ -6,7 +6,7 @@ CC ?= gcc
 CXX ?= g++
 OBJCOPY ?= objcopy
 
-CXXFLAGS := $(shell pkg-config --cflags rocksdb)
+CXXFLAGS := $(shell pkg-config --cflags rocksdb) -std=c++17
 ifneq ($(.SHELLSTATUS),0)
 $(error pkg-config failed)
 endif
