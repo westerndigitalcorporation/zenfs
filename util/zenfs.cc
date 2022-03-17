@@ -20,9 +20,11 @@
 
 #ifdef WITH_TERARKDB
 #include <fs/fs_zenfs.h>
+#include <fs/util.h>
 #include <fs/version.h>
 #else
 #include <rocksdb/plugin/zenfs/fs/fs_zenfs.h>
+#include <rocksdb/plugin/zenfs/fs/util.h>
 #include <rocksdb/plugin/zenfs/fs/version.h>
 #endif
 
@@ -77,100 +79,6 @@ bool zenfs_format_path(std::string &path, bool directory) {
   return true;
 }
 
-std::unique_ptr<ZonedBlockDevice> zbd_open(bool readonly, bool exclusive) {
-  std::unique_ptr<ZonedBlockDevice> zbd{
-      new ZonedBlockDevice(FLAGS_zbd, nullptr)};
-  IOStatus open_status = zbd->Open(readonly, exclusive);
-
-  if (!open_status.ok()) {
-    fprintf(stderr, "Failed to open zoned block device: %s, error: %s\n",
-            FLAGS_zbd.c_str(), open_status.ToString().c_str());
-    zbd.reset();
-  }
-
-  return zbd;
-}
-
-// Here we pass 'zbd' by non-const reference to be able to pass its ownership
-// to 'zenFS'
-Status zenfs_mount(std::unique_ptr<ZonedBlockDevice> &zbd,
-                   std::unique_ptr<ZenFS> *zenFS, bool readonly) {
-  Status s;
-
-  std::unique_ptr<ZenFS> localZenFS{
-      new ZenFS(zbd.release(), FileSystem::Default(), nullptr)};
-  s = localZenFS->Mount(readonly);
-  if (!s.ok()) {
-    localZenFS.reset();
-  }
-  *zenFS = std::move(localZenFS);
-
-  return s;
-}
-
-int is_dir(const char *path) {
-  struct stat st;
-  if (stat(path, &st) != 0) {
-    fprintf(stderr, "Failed to stat %s\n", path);
-    return 1;
-  }
-  return S_ISDIR(st.st_mode);
-}
-
-// Create or check pre-existing aux directory and fail if it is
-// inaccessible by current user and if it has previous data
-int create_aux_dir(const char *path) {
-  struct dirent *dent;
-  size_t nfiles = 0;
-  int ret = 0;
-
-  errno = 0;
-  ret = mkdir(path, 0750);
-  if (ret < 0 && EEXIST != errno) {
-    fprintf(stderr, "Failed to create aux directory %s: %s\n", path,
-            strerror(errno));
-    return 1;
-  }
-  // The aux_path is now available, check if it is a directory infact
-  // and is empty and the user has access permission
-
-  if (!is_dir(path)) {
-    fprintf(stderr, "Aux path %s is not a directory\n", path);
-    return 1;
-  }
-
-  errno = 0;
-
-  auto closedirDeleter = [](DIR *d) {
-    if (d != nullptr) closedir(d);
-  };
-  std::unique_ptr<DIR, decltype(closedirDeleter)> aux_dir{
-      opendir(path), std::move(closedirDeleter)};
-  if (errno) {
-    fprintf(stderr, "Failed to open aux directory %s: %s\n", path,
-            strerror(errno));
-    return 1;
-  }
-
-  // Consider the directory as non-empty if any files/dir other
-  // than . and .. are found.
-  while ((dent = readdir(aux_dir.get())) != NULL && nfiles <= 2) ++nfiles;
-  if (nfiles > 2) {
-    fprintf(stderr, "Aux directory %s is not empty.\n", path);
-    return 1;
-  }
-
-  if (access(path, R_OK | W_OK | X_OK) < 0) {
-    fprintf(stderr,
-            "User does not have access permissions on "
-            "aux directory %s\n",
-            path);
-    return 1;
-  }
-
-  return 0;
-}
-
 int zenfs_tool_mkfs() {
   Status s;
 
@@ -179,39 +87,9 @@ int zenfs_tool_mkfs() {
     return 1;
   }
 
-  if (create_aux_dir(FLAGS_aux_path.c_str())) return 1;
-
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(false, true);
-  if (!zbd) return 1;
-
-  std::unique_ptr<ZenFS> zenFS;
-  s = zenfs_mount(zbd, &zenFS, false);
-  if ((s.ok() || !s.IsNotFound()) && !FLAGS_force) {
-    fprintf(
-        stderr,
-        "Existing filesystem found, use --force if you want to replace it.\n");
-    return 1;
-  }
-
-  zenFS.reset();
-
-  zbd = zbd_open(false, true);
-  ZonedBlockDevice *zbdRaw = zbd.get();
-  zenFS.reset(new ZenFS(zbd.release(), FileSystem::Default(), nullptr));
-
-  if (FLAGS_aux_path.back() != '/') FLAGS_aux_path.append("/");
-
-  s = zenFS->MkFS(FLAGS_aux_path, FLAGS_finish_threshold);
-  if (!s.ok()) {
-    fprintf(stderr, "Failed to create file system, error: %s\n",
-            s.ToString().c_str());
-    return 1;
-  }
-
-  fprintf(stdout, "ZenFS file system created. Free space: %lu MB\n",
-          zbdRaw->GetFreeSpace() / (1024 * 1024));
-
-  return 0;
+  return zenfs_mkfs(std::filesystem::path(FLAGS_zbd),
+                    std::filesystem::path(FLAGS_aux_path),
+                    FLAGS_finish_threshold, FLAGS_force);
 }
 
 void list_children(const std::unique_ptr<ZenFS> &zenFS,
@@ -255,7 +133,7 @@ void list_children(const std::unique_ptr<ZenFS> &zenFS,
 
 int zenfs_tool_list() {
   Status s;
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(true, false);
+  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(FLAGS_zbd, true, false);
   if (!zbd) return 1;
 
   std::unique_ptr<ZenFS> zenFS;
@@ -277,7 +155,7 @@ int zenfs_tool_list() {
 
 int zenfs_tool_df() {
   Status s;
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(true, false);
+  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(FLAGS_zbd, true, false);
   if (!zbd) return 1;
   ZonedBlockDevice *zbdRaw = zbd.get();
 
@@ -497,7 +375,7 @@ int zenfs_tool_backup() {
   IOStatus io_status;
   IOOptions opts;
   IODebugContext dbg;
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(true, true);
+  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(FLAGS_zbd, true, true);
 
   if (!zenfs_format_path(FLAGS_backup_path, false)) {
     fprintf(stderr, "Error: invalid backup path \n");
@@ -509,7 +387,7 @@ int zenfs_tool_backup() {
       fprintf(stderr,
               "WARNING: attempting to back up a zoned block device in use! "
               "Expect data loss and corruption.\n");
-      zbd = zbd_open(true, false);
+      zbd = zbd_open(FLAGS_zbd, true, false);
     }
   }
 
@@ -711,7 +589,7 @@ int zenfs_tool_restore() {
 
   ReadWriteLifeTimeHints();
 
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(false, true);
+  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(FLAGS_zbd, false, true);
   if (!zbd) return 1;
 
   std::unique_ptr<ZenFS> zenFS;
@@ -744,7 +622,7 @@ int zenfs_tool_restore() {
 
 int zenfs_tool_dump() {
   Status s;
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(true, false);
+  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(FLAGS_zbd, true, false);
   if (!zbd) return 1;
   ZonedBlockDevice *zbdRaw = zbd.get();
 
@@ -768,7 +646,7 @@ int zenfs_tool_dump() {
 
 int zenfs_tool_fsinfo() {
   Status s;
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(true, false);
+  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(FLAGS_zbd, true, false);
   if (!zbd) return 1;
 
   std::unique_ptr<ZenFS> zenFS;
