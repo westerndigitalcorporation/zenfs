@@ -236,9 +236,9 @@ IOStatus ZenMetaLog::ReadRecord(Slice* record, std::string* scratch) {
   return IOStatus::OK();
 }
 
-ZenFS::ZenFS(ZonedBlockDevice* zbd, std::shared_ptr<FileSystem> aux_fs,
-             std::shared_ptr<Logger> logger)
-    : FileSystemWrapper(aux_fs), zbd_(zbd), logger_(logger) {
+ZenFS::ZenFS(std::unique_ptr<ZonedBlockDevice> zbd,
+             std::shared_ptr<FileSystem> aux_fs, std::shared_ptr<Logger> logger)
+    : FileSystemWrapper(aux_fs), zbd_(zbd.release()), logger_(logger) {
   Info(logger_, "ZenFS initializing");
   Info(logger_, "ZenFS parameters: block device: %s, aux filesystem: %s",
        zbd_->GetFilename().c_str(), target()->Name());
@@ -1396,13 +1396,14 @@ Status ZenFS::Mount(bool readonly) {
   return Status::OK();
 }
 
-Status ZenFS::MkFS(std::string aux_fs_path, uint32_t finish_threshold) {
+Status ZenFS::MkFS(std::filesystem::path const& aux_fs_path,
+                   uint32_t finish_threshold) {
   std::vector<Zone*> metazones = zbd_->GetMetaZones();
   std::unique_ptr<ZenMetaLog> log;
   Zone* meta_zone = nullptr;
   IOStatus s;
 
-  if (aux_fs_path.length() > 255) {
+  if (aux_fs_path.string().length() > 255) {
     return Status::InvalidArgument(
         "Aux filesystem path must be less than 256 bytes\n");
   }
@@ -1506,7 +1507,8 @@ Status NewZenFS(FileSystem** fs, const std::string& bdevname,
   }
 #endif
 
-  ZonedBlockDevice* zbd = new ZonedBlockDevice(bdevname, logger, metrics);
+  std::unique_ptr<ZonedBlockDevice> zbd{
+      new ZonedBlockDevice(bdevname, logger, metrics)};
   IOStatus zbd_status = zbd->Open(false, true);
   if (!zbd_status.ok()) {
     Error(logger, "mkfs: Failed to open zoned block device: %s",
@@ -1514,7 +1516,7 @@ Status NewZenFS(FileSystem** fs, const std::string& bdevname,
     return Status::IOError(zbd_status.ToString());
   }
 
-  ZenFS* zenFS = new ZenFS(zbd, FileSystem::Default(), logger);
+  ZenFS* zenFS = new ZenFS(std::move(zbd), FileSystem::Default(), logger);
   s = zenFS->Mount(false);
   if (!s.ok()) {
     delete zenFS;

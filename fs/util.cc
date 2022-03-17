@@ -1,10 +1,7 @@
 
 #include "util.h"
 
-#include <dirent.h>
 #include <libzbd/zbd.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 #include <cstdint>
@@ -16,138 +13,152 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-std::unique_ptr<ZonedBlockDevice> zbd_open(std::string const &zbd_path,
-                                           bool readonly, bool exclusive) {
-  std::unique_ptr<ZonedBlockDevice> zbd{
-      new ZonedBlockDevice(zbd_path, nullptr)};
-  IOStatus open_status = zbd->Open(readonly, exclusive);
+IOStatus zenfs_zbd_open(std::filesystem::path const &path, bool readonly,
+                        bool exclusive,
+                        std::unique_ptr<ZonedBlockDevice> &out_zbd) {
+  out_zbd =
+      std::unique_ptr<ZonedBlockDevice>{new ZonedBlockDevice(path, nullptr)};
+  IOStatus status = out_zbd->Open(readonly, exclusive);
 
-  if (!open_status.ok()) {
+  if (!status.ok()) {
     fprintf(stderr, "Failed to open zoned block device: %s, error: %s\n",
-            zbd_path.c_str(), open_status.ToString().c_str());
-    zbd.reset();
+            path.c_str(), status.ToString().c_str());
+    out_zbd.reset();
   }
 
-  return zbd;
+  return status;
 }
 
-// Here we pass 'zbd' by non-const reference to be able to pass its ownership
-// to 'zenFS'
-Status zenfs_mount(std::unique_ptr<ZonedBlockDevice> &zbd,
-                   std::unique_ptr<ZenFS> *zenFS, bool readonly) {
-  Status s;
+Status zenfs_mount(std::unique_ptr<ZonedBlockDevice> &zbd, bool readonly,
+                   std::unique_ptr<ZenFS> &out_zen_fs) {
+  Status status;
 
-  std::unique_ptr<ZenFS> localZenFS{
-      new ZenFS(zbd.release(), FileSystem::Default(), nullptr)};
-  s = localZenFS->Mount(readonly);
-  if (!s.ok()) {
-    localZenFS.reset();
+  out_zen_fs = std::unique_ptr<ZenFS>{
+      new ZenFS(std::move(zbd), FileSystem::Default(), nullptr)};
+  status = out_zen_fs->Mount(readonly);
+  if (!status.ok()) {
+    out_zen_fs.reset();
   }
-  *zenFS = std::move(localZenFS);
 
-  return s;
+  return status;
 }
 
-static int is_dir(const char *path) {
-  struct stat st;
-  if (stat(path, &st) != 0) {
-    fprintf(stderr, "Failed to stat %s\n", path);
-    return 1;
-  }
-  return S_ISDIR(st.st_mode);
+static Status zenfs_exists(std::filesystem::path const &zbd_path,
+                           bool &out_exists) {
+  Status status;
+  std::unique_ptr<ZonedBlockDevice> zbd;
+  std::unique_ptr<ZenFS> zen_fs;
+
+  status = zenfs_zbd_open(zbd_path, false, true, zbd);
+  if (!status.ok()) return Status::IOError("Failed to open ZBD");
+
+  status = zenfs_mount(zbd, false, zen_fs);
+  out_exists = status.ok() || !status.IsNotFound();
+
+  return Status::OK();
 }
 
 // Create or check pre-existing aux directory and fail if it is
 // inaccessible by current user and if it has previous data
-static int create_aux_dir(const char *path) {
-  struct dirent *dent;
-  size_t nfiles = 0;
-  int ret = 0;
+static Status create_aux_dir(std::filesystem::path const &path) {
+  namespace fs = std::filesystem;
+  std::error_code ec;
 
-  errno = 0;
-  ret = mkdir(path, 0750);
-  if (ret < 0 && EEXIST != errno) {
-    fprintf(stderr, "Failed to create aux directory %s: %s\n", path,
-            strerror(errno));
-    return 1;
-  }
-  // The aux_path is now available, check if it is a directory infact
-  // and is empty and the user has access permission
-
-  if (!is_dir(path)) {
-    fprintf(stderr, "Aux path %s is not a directory\n", path);
-    return 1;
+  bool aux_exists = fs::exists(path, ec);
+  if (ec) {
+    return Status::Aborted("Failed to check if aux directory exists: " +
+                           ec.message());
   }
 
-  errno = 0;
-
-  auto closedirDeleter = [](DIR *d) {
-    if (d != nullptr) closedir(d);
-  };
-  std::unique_ptr<DIR, decltype(closedirDeleter)> aux_dir{
-      opendir(path), std::move(closedirDeleter)};
-  if (errno) {
-    fprintf(stderr, "Failed to open aux directory %s: %s\n", path,
-            strerror(errno));
-    return 1;
+  bool aux_is_dir = false;
+  if (aux_exists) {
+    aux_is_dir = fs::is_directory(path, ec);
+    if (ec) {
+      return Status::Aborted("Failed to check if aux_dir is directory" +
+                             ec.message());
+    }
   }
 
-  // Consider the directory as non-empty if any files/dir other
-  // than . and .. are found.
-  while ((dent = readdir(aux_dir.get())) != NULL && nfiles <= 2) ++nfiles;
-  if (nfiles > 2) {
-    fprintf(stderr, "Aux directory %s is not empty.\n", path);
-    return 1;
+  if (aux_exists && !aux_is_dir) {
+    return Status::Aborted("Aux path exists but is not a directory");
   }
 
-  if (access(path, R_OK | W_OK | X_OK) < 0) {
-    fprintf(stderr,
-            "User does not have access permissions on "
-            "aux directory %s\n",
-            path);
-    return 1;
+  if (!aux_exists) {
+    if (!fs::create_directory(path, ec) || ec) {
+      return Status::IOError("Failed to create aux path:" + ec.message());
+    }
+
+    fs::permissions(
+        path,
+        fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec,
+        ec);
+    if (ec) {
+      return Status::IOError("Failed to set permissions on aux path:" +
+                             ec.message());
+    }
   }
 
-  return 0;
+  if (access(path.c_str(), R_OK | W_OK | X_OK) < 0) {
+    return Status::Aborted(
+        "User does not have access permissions on aux directory " +
+        path.string());
+  }
+
+  if (std::distance(fs::directory_iterator{path}, {}) > 2) {
+    return Status::Aborted("Aux directory " + path.string() + " is not empty");
+  }
+
+  return Status::OK();
 }
 
-int zenfs_mkfs(std::string const &zbd_path, std::string const &aux_path,
-               int finish_threshold, bool force) {
-  Status s;
+static Status zenfs_create(std::filesystem::path const &zbd_path,
+                           std::filesystem::path const &aux_path,
+                           uint32_t finish_threshold
 
-  if (create_aux_dir(aux_path.c_str())) return 1;
+) {
+  Status status;
+  std::unique_ptr<ZonedBlockDevice> zbd;
+  std::unique_ptr<ZenFS> zen_fs;
 
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(zbd_path, false, true);
-  if (!zbd) return 1;
+  status = create_aux_dir(aux_path);
+  if (!status.ok()) return status;
 
-  std::unique_ptr<ZenFS> zenFS;
-  s = zenfs_mount(zbd, &zenFS, false);
-  if ((s.ok() || !s.IsNotFound()) && !force) {
-    fprintf(
-        stderr,
-        "Existing filesystem found, use --force if you want to replace it.\n");
-    return 1;
+  status = zenfs_zbd_open(zbd_path, false, true, zbd);
+  if (!status.ok()) {
+    return status;
   }
 
-  zenFS.reset();
-
-  zbd = zbd_open(zbd_path, false, true);
-  ZonedBlockDevice *zbdRaw = zbd.get();
-  zenFS.reset(new ZenFS(zbd.release(), FileSystem::Default(), nullptr));
+  zen_fs.reset(new ZenFS(std::move(zbd), FileSystem::Default(), nullptr));
 
   std::string aux_path_patched = aux_path;
   if (aux_path_patched.back() != '/') aux_path_patched.append("/");
 
-  s = zenFS->MkFS(aux_path_patched, finish_threshold);
-  if (!s.ok()) {
-    fprintf(stderr, "Failed to create file system, error: %s\n",
-            s.ToString().c_str());
-    return 1;
+  status = zen_fs->MkFS(aux_path_patched, finish_threshold);
+  if (!status.ok()) {
+    return status;
   }
 
-  fprintf(stdout, "ZenFS file system created. Free space: %lu MB\n",
-          zbdRaw->GetFreeSpace() / (1024 * 1024));
-
-  return 0;
+  return status;
 }
+
+Status zenfs_mkfs(std::filesystem::path const &zbd_path,
+                  std::filesystem::path const &aux_path,
+                  uint32_t finish_threshold, bool force) {
+  Status status;
+  bool exists = false;
+
+  status = zenfs_exists(zbd_path, exists);
+  if (!status.ok()) {
+    return status;
+  }
+
+  if (exists && !force) {
+    return Status::Aborted(
+        "Existing filesystem found, use --force if you want to replace "
+        "it.");
+  }
+
+  return zenfs_create(zbd_path, aux_path, finish_threshold);
+}
+
 }  // namespace ROCKSDB_NAMESPACE

@@ -6,13 +6,13 @@
 
 #pragma once
 
+#include <filesystem>
 #include <memory>
 
 #include "io_zenfs.h"
 #include "metrics.h"
 #include "rocksdb/env.h"
 #include "rocksdb/file_system.h"
-#include "rocksdb/status.h"
 #include "snapshot.h"
 #include "version.h"
 #include "zbd_zenfs.h"
@@ -257,12 +257,14 @@ class ZenFS : public FileSystemWrapper {
                             IODebugContext* dbg, bool reopen);
 
  public:
-  explicit ZenFS(ZonedBlockDevice* zbd, std::shared_ptr<FileSystem> aux_fs,
+  explicit ZenFS(std::unique_ptr<ZonedBlockDevice> zbd,
+                 std::shared_ptr<FileSystem> aux_fs,
                  std::shared_ptr<Logger> logger);
   virtual ~ZenFS();
 
   Status Mount(bool readonly);
-  Status MkFS(std::string aux_fs_path, uint32_t finish_threshold);
+  Status MkFS(std::filesystem::path const& aux_fs_path,
+              uint32_t finish_threshold);
   std::map<std::string, Env::WriteLifeTimeHint> GetWriteLifeTimeHints();
 
   const char* Name() const override {

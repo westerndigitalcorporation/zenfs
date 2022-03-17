@@ -8,12 +8,14 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-std::unique_ptr<ZonedBlockDevice> zbd_open(std::string const& zbd_path,
-                                           bool readonly, bool exclusive);
+IOStatus zenfs_zbd_open(std::filesystem::path const &path, bool readonly,
+                        bool exclusive,
+                        std::unique_ptr<ZonedBlockDevice> &out_zbd);
 
-Status zenfs_mount(std::unique_ptr<ZonedBlockDevice>& zbd,
-                   std::unique_ptr<ZenFS>* zenFS, bool readonly);
+Status zenfs_mount(std::unique_ptr<ZonedBlockDevice> &zbd, bool readonly,
+                   std::unique_ptr<ZenFS> &out_zen_fs);
 
-int zenfs_mkfs(std::string const& zbd_path, std::string const& aux_path,
-               int finish_threshold, bool force);
+Status zenfs_mkfs(std::filesystem::path const &zbd_path,
+                  std::filesystem::path const &aux_path,
+                  uint32_t finish_threshold, bool force);
 }  // namespace ROCKSDB_NAMESPACE
