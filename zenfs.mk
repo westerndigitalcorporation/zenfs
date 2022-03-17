@@ -14,6 +14,7 @@ zenfs_HEADERS = \
 	fs/util.h
 
 zenfs_LDFLAGS = -u zenfs_filesystem_reg
+zenfs_TEST_MAIN_SOURCES = fs/test/fs_zenfs_test.cc
 
 ZENFS_ROOT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 
