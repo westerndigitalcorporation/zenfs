@@ -30,7 +30,6 @@
 #endif
 
 using GFLAGS_NAMESPACE::ParseCommandLineFlags;
-using GFLAGS_NAMESPACE::RegisterFlagValidator;
 using GFLAGS_NAMESPACE::SetUsageMessage;
 
 DEFINE_string(zbd, "", "Path to a zoned block device.");
