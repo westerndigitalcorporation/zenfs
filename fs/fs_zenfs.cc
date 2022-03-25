@@ -15,7 +15,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <filesystem>
 #include <sstream>
 #include <utility>
 #include <vector>
@@ -272,6 +271,11 @@ IOStatus ZenFS::Repair() {
   return IOStatus::OK();
 }
 
+std::string ZenFS::FormatPathLexically(std::filesystem::path filepath) {
+  std::filesystem::path ret = "/" / filepath.lexically_normal();
+  return ret.string();
+}
+
 void ZenFS::LogFiles() {
   std::map<std::string, std::shared_ptr<ZoneFile>>::iterator it;
   uint64_t total_size = 0;
@@ -474,6 +478,7 @@ IOStatus ZenFS::SyncFileMetadata(ZoneFile* zoneFile, bool replace) {
 /* Must hold files_mtx_ */
 std::shared_ptr<ZoneFile> ZenFS::GetFileNoLock(std::string fname) {
   std::shared_ptr<ZoneFile> zoneFile(nullptr);
+  fname = FormatPathLexically(fname);
   if (files_.find(fname) != files_.end()) {
     zoneFile = files_[fname];
   }
@@ -493,6 +498,7 @@ IOStatus ZenFS::DeleteFileNoLock(std::string fname, const IOOptions& options,
   std::shared_ptr<ZoneFile> zoneFile(nullptr);
   IOStatus s;
 
+  fname = FormatPathLexically(fname);
   zoneFile = GetFileNoLock(fname);
   if (zoneFile != nullptr) {
     std::string record;
@@ -522,10 +528,11 @@ IOStatus ZenFS::DeleteFileNoLock(std::string fname, const IOOptions& options,
   return s;
 }
 
-IOStatus ZenFS::NewSequentialFile(const std::string& fname,
+IOStatus ZenFS::NewSequentialFile(const std::string& filename,
                                   const FileOptions& file_opts,
                                   std::unique_ptr<FSSequentialFile>* result,
                                   IODebugContext* dbg) {
+  std::string fname = FormatPathLexically(filename);
   std::shared_ptr<ZoneFile> zoneFile = GetFile(fname);
 
   Debug(logger_, "New sequential file: %s direct: %d\n", fname.c_str(),
@@ -540,10 +547,11 @@ IOStatus ZenFS::NewSequentialFile(const std::string& fname,
   return IOStatus::OK();
 }
 
-IOStatus ZenFS::NewRandomAccessFile(const std::string& fname,
+IOStatus ZenFS::NewRandomAccessFile(const std::string& filename,
                                     const FileOptions& file_opts,
                                     std::unique_ptr<FSRandomAccessFile>* result,
                                     IODebugContext* dbg) {
+  std::string fname = FormatPathLexically(filename);
   std::shared_ptr<ZoneFile> zoneFile = GetFile(fname);
 
   Debug(logger_, "New random access file: %s direct: %d\n", fname.c_str(),
@@ -563,22 +571,25 @@ inline bool ends_with(std::string const& value, std::string const& ending) {
   return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
 }
 
-IOStatus ZenFS::NewWritableFile(const std::string& fname,
+IOStatus ZenFS::NewWritableFile(const std::string& filename,
                                 const FileOptions& file_opts,
                                 std::unique_ptr<FSWritableFile>* result,
                                 IODebugContext* /*dbg*/) {
+  std::string fname = FormatPathLexically(filename);
   Debug(logger_, "New writable file: %s direct: %d\n", fname.c_str(),
         file_opts.use_direct_writes);
 
   return OpenWritableFile(fname, file_opts, result, nullptr, false);
 }
 
-IOStatus ZenFS::ReuseWritableFile(const std::string& fname,
-                                  const std::string& old_fname,
+IOStatus ZenFS::ReuseWritableFile(const std::string& filename,
+                                  const std::string& old_filename,
                                   const FileOptions& file_opts,
                                   std::unique_ptr<FSWritableFile>* result,
                                   IODebugContext* dbg) {
   IOStatus s;
+  std::string fname = FormatPathLexically(filename);
+  std::string old_fname = FormatPathLexically(old_filename);
   Debug(logger_, "Reuse writable file: %s old name: %s\n", fname.c_str(),
         old_fname.c_str());
 
@@ -598,8 +609,9 @@ IOStatus ZenFS::ReuseWritableFile(const std::string& fname,
   return OpenWritableFile(fname, file_opts, result, dbg, false);
 }
 
-IOStatus ZenFS::FileExists(const std::string& fname, const IOOptions& options,
-                           IODebugContext* dbg) {
+IOStatus ZenFS::FileExists(const std::string& filename,
+                           const IOOptions& options, IODebugContext* dbg) {
+  std::string fname = FormatPathLexically(filename);
   Debug(logger_, "FileExists: %s \n", fname.c_str());
 
   if (GetFile(fname) == nullptr) {
@@ -612,10 +624,11 @@ IOStatus ZenFS::FileExists(const std::string& fname, const IOOptions& options,
 /* If the file does not exist, create a new one,
  * else return the existing file
  */
-IOStatus ZenFS::ReopenWritableFile(const std::string& fname,
+IOStatus ZenFS::ReopenWritableFile(const std::string& filename,
                                    const FileOptions& file_opts,
                                    std::unique_ptr<FSWritableFile>* result,
                                    IODebugContext* dbg) {
+  std::string fname = FormatPathLexically(filename);
   Debug(logger_, "Reopen writable file: %s \n", fname.c_str());
 
   return OpenWritableFile(fname, file_opts, result, dbg, true);
@@ -656,11 +669,12 @@ void ZenFS::GetZenFSChildrenNoLock(const std::string& dir,
 }
 
 /* Must hold files_mtx_ */
-IOStatus ZenFS::GetChildrenNoLock(const std::string& dir,
+IOStatus ZenFS::GetChildrenNoLock(const std::string& dir_path,
                                   const IOOptions& options,
                                   std::vector<std::string>* result,
                                   IODebugContext* dbg) {
   std::vector<std::string> auxfiles;
+  std::string dir = FormatPathLexically(dir_path);
   IOStatus s;
 
   Debug(logger_, "GetChildrenNoLock: %s \n", dir.c_str());
@@ -693,10 +707,11 @@ IOStatus ZenFS::GetChildren(const std::string& dir, const IOOptions& options,
 }
 
 /* Must hold files_mtx_ */
-IOStatus ZenFS::DeleteDirRecursiveNoLock(const std::string& d,
+IOStatus ZenFS::DeleteDirRecursiveNoLock(const std::string& dir,
                                          const IOOptions& options,
                                          IODebugContext* dbg) {
   std::vector<std::string> children;
+  std::string d = FormatPathLexically(dir);
   IOStatus s;
 
   Debug(logger_, "DeleteDirRecursiveNoLock: %s aux: %s\n", d.c_str(),
@@ -742,11 +757,12 @@ IOStatus ZenFS::DeleteDirRecursive(const std::string& d,
   return s;
 }
 
-IOStatus ZenFS::OpenWritableFile(const std::string& fname,
+IOStatus ZenFS::OpenWritableFile(const std::string& filename,
                                  const FileOptions& file_opts,
                                  std::unique_ptr<FSWritableFile>* result,
                                  IODebugContext* dbg, bool reopen) {
   IOStatus s;
+  std::string fname = FormatPathLexically(filename);
   bool resetIOZones = false;
   {
     std::lock_guard<std::mutex> file_lock(files_mtx_);
@@ -809,10 +825,11 @@ IOStatus ZenFS::DeleteFile(const std::string& fname, const IOOptions& options,
   return s;
 }
 
-IOStatus ZenFS::GetFileModificationTime(const std::string& f,
+IOStatus ZenFS::GetFileModificationTime(const std::string& filename,
                                         const IOOptions& options,
                                         uint64_t* mtime, IODebugContext* dbg) {
   std::shared_ptr<ZoneFile> zoneFile(nullptr);
+  std::string f = FormatPathLexically(filename);
   IOStatus s;
 
   Debug(logger_, "GetFileModificationTime: %s \n", f.c_str());
@@ -826,9 +843,11 @@ IOStatus ZenFS::GetFileModificationTime(const std::string& f,
   return s;
 }
 
-IOStatus ZenFS::GetFileSize(const std::string& f, const IOOptions& options,
-                            uint64_t* size, IODebugContext* dbg) {
+IOStatus ZenFS::GetFileSize(const std::string& filename,
+                            const IOOptions& options, uint64_t* size,
+                            IODebugContext* dbg) {
   std::shared_ptr<ZoneFile> zoneFile(nullptr);
+  std::string f = FormatPathLexically(filename);
   IOStatus s;
 
   Debug(logger_, "GetFileSize: %s \n", f.c_str());
@@ -919,12 +938,14 @@ IOStatus ZenFS::RenameAuxPathNoLock(const std::string& source_path,
 }
 
 /* Must hold files_mtx_ */
-IOStatus ZenFS::RenameFileNoLock(const std::string& source_path,
-                                 const std::string& dest_path,
+IOStatus ZenFS::RenameFileNoLock(const std::string& src_path,
+                                 const std::string& dst_path,
                                  const IOOptions& options,
                                  IODebugContext* dbg) {
   std::shared_ptr<ZoneFile> source_file(nullptr);
   std::shared_ptr<ZoneFile> existing_dest_file(nullptr);
+  std::string source_path = FormatPathLexically(src_path);
+  std::string dest_path = FormatPathLexically(dst_path);
   IOStatus s;
 
   Debug(logger_, "Rename file: %s to : %s\n", source_path.c_str(),
@@ -973,9 +994,11 @@ IOStatus ZenFS::RenameFile(const std::string& source_path,
   return s;
 }
 
-IOStatus ZenFS::LinkFile(const std::string& fname, const std::string& lname,
+IOStatus ZenFS::LinkFile(const std::string& file, const std::string& link,
                          const IOOptions& options, IODebugContext* dbg) {
   std::shared_ptr<ZoneFile> src_file(nullptr);
+  std::string fname = FormatPathLexically(file);
+  std::string lname = FormatPathLexically(link);
   IOStatus s;
 
   Debug(logger_, "LinkFile: %s to %s\n", fname.c_str(), lname.c_str());
@@ -1002,9 +1025,10 @@ IOStatus ZenFS::LinkFile(const std::string& fname, const std::string& lname,
   return s;
 }
 
-IOStatus ZenFS::NumFileLinks(const std::string& fname, const IOOptions& options,
+IOStatus ZenFS::NumFileLinks(const std::string& file, const IOOptions& options,
                              uint64_t* nr_links, IODebugContext* dbg) {
   std::shared_ptr<ZoneFile> src_file(nullptr);
+  std::string fname = FormatPathLexically(file);
   IOStatus s;
 
   Debug(logger_, "NumFileLinks: %s\n", fname.c_str());
@@ -1021,11 +1045,13 @@ IOStatus ZenFS::NumFileLinks(const std::string& fname, const IOOptions& options,
   return s;
 }
 
-IOStatus ZenFS::AreFilesSame(const std::string& fname, const std::string& link,
+IOStatus ZenFS::AreFilesSame(const std::string& file, const std::string& linkf,
                              const IOOptions& options, bool* res,
                              IODebugContext* dbg) {
   std::shared_ptr<ZoneFile> src_file(nullptr);
   std::shared_ptr<ZoneFile> dst_file(nullptr);
+  std::string fname = FormatPathLexically(file);
+  std::string link = FormatPathLexically(linkf);
   IOStatus s;
 
   Debug(logger_, "AreFilesSame: %s, %s\n", fname.c_str(), link.c_str());
@@ -1396,10 +1422,11 @@ Status ZenFS::Mount(bool readonly) {
   return Status::OK();
 }
 
-Status ZenFS::MkFS(std::string aux_fs_path, uint32_t finish_threshold) {
+Status ZenFS::MkFS(std::string aux_fs_p, uint32_t finish_threshold) {
   std::vector<Zone*> metazones = zbd_->GetMetaZones();
   std::unique_ptr<ZenMetaLog> log;
   Zone* meta_zone = nullptr;
+  std::string aux_fs_path = FormatPathLexically(aux_fs_p);
   IOStatus s;
 
   if (aux_fs_path.length() > 255) {
