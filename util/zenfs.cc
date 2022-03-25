@@ -49,32 +49,8 @@ DEFINE_string(dest_file, "", "Destination file path");
 
 namespace ROCKSDB_NAMESPACE {
 
-bool zenfs_format_path(std::string &path, bool directory) {
-  /* if the path is a directory, ensure that it ends with a slash */
-  if (directory && path.back() != '/') path = path + "/";
-
-  /* relative paths are not supported */
-  if ((path.find("../", 0) != std::string::npos)) {
-    return false;
-  }
-
-  /* remove any superflous slashes */
-  std::size_t pos = path.find('/', 0);
-  while (pos != std::string::npos) {
-    while (path.compare(pos + 1, 1, "/") == 0) {
-      path.erase(pos + 1, 1);
-    }
-    pos = path.find('/', pos + 1);
-  }
-
-  /* Ensure that there are no leading ./ or / */
-  if (path.find("./") == 0) path.erase(0, 2);
-  if (path.front() == '/') path.erase(0, 1);
-
-  /* Drop current-directory for root paths */
-  if (path == ".") path = "";
-
-  return true;
+void AddDirSeparatorAtEnd(std::string &path) {
+  if (path.back() != '/') path = path + "/";
 }
 
 std::unique_ptr<ZonedBlockDevice> zbd_open(bool readonly, bool exclusive) {
@@ -265,11 +241,7 @@ int zenfs_tool_list() {
             s.ToString().c_str());
     return 1;
   }
-
-  if (!zenfs_format_path(FLAGS_path, true)) {
-    fprintf(stderr, "Error: invalid path\n");
-    return 1;
-  }
+  AddDirSeparatorAtEnd(FLAGS_path);
   list_children(zenFS, FLAGS_path);
 
   return 0;
@@ -499,11 +471,6 @@ int zenfs_tool_backup() {
   IODebugContext dbg;
   std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(true, true);
 
-  if (!zenfs_format_path(FLAGS_backup_path, false)) {
-    fprintf(stderr, "Error: invalid backup path \n");
-    return 1;
-  }
-
   if (!zbd) {
     if (FLAGS_force) {
       fprintf(stderr,
@@ -704,11 +671,7 @@ int zenfs_tool_restore() {
   Status status;
   IOStatus io_status;
 
-  if (!zenfs_format_path(FLAGS_restore_path, true)) {
-    fprintf(stderr, "Error: invalid restore path\n");
-    return 1;
-  }
-
+  AddDirSeparatorAtEnd(FLAGS_restore_path);
   ReadWriteLifeTimeHints();
 
   std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(false, true);

@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <filesystem>
 #include <memory>
 
 #include "io_zenfs.h"
@@ -154,6 +155,7 @@ class ZenFS : public FileSystemWrapper {
 
   void LogFiles();
   void ClearFiles();
+  std::string FormatPathLexically(std::filesystem::path filepath);
   IOStatus WriteSnapshotLocked(ZenMetaLog* meta_log);
   IOStatus WriteEndRecord(ZenMetaLog* meta_log);
   IOStatus RollMetaZoneLocked();
