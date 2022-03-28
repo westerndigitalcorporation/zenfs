@@ -671,6 +671,11 @@ int zenfs_tool_restore() {
   Status status;
   IOStatus io_status;
 
+  if (FLAGS_path.empty()) {
+    fprintf(stderr, "Error: Specify --path to be restored.\n");
+    return 1;
+  }
+
   AddDirSeparatorAtEnd(FLAGS_restore_path);
   ReadWriteLifeTimeHints();
 
