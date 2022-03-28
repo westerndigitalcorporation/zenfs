@@ -677,6 +677,7 @@ int zenfs_tool_restore() {
   }
 
   AddDirSeparatorAtEnd(FLAGS_restore_path);
+  AddDirSeparatorAtEnd(FLAGS_path);
   ReadWriteLifeTimeHints();
 
   std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(false, true);
@@ -690,9 +691,6 @@ int zenfs_tool_restore() {
     return 1;
   }
 
-  std::string path = FLAGS_path;
-  if (path.back() != '/') path += "/";
-
   io_status = zenfs_create_directories(zenFS.get(), FLAGS_restore_path);
   if (!io_status.ok()) {
     fprintf(stderr, "Create directory failed, error: %s\n",
@@ -700,7 +698,7 @@ int zenfs_tool_restore() {
     return 1;
   }
 
-  io_status = zenfs_tool_copy_dir(FileSystem::Default().get(), path,
+  io_status = zenfs_tool_copy_dir(FileSystem::Default().get(), FLAGS_path,
                                   zenFS.get(), FLAGS_restore_path);
   if (!io_status.ok()) {
     fprintf(stderr, "Copy failed, error: %s\n", io_status.ToString().c_str());
