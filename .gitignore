@@ -1,5 +1,6 @@
 util/zenfs
-fs/*.o
-fs/*.cc.d
+util/zenfs.dbg
+*.o
+*.cc.d
 tests/results
 fs/version.h
