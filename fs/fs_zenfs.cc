@@ -652,6 +652,11 @@ void ZenFS::GetZenFSChildrenNoLock(const std::string& dir,
   std::string dir_with_terminating_seperator =
       path_as_string_with_separator_at_end(std::filesystem::path(dir));
 
+  auto relative_child_path =
+      [&dir_with_terminating_seperator](std::string const& full_path) {
+        return full_path.substr(dir_with_terminating_seperator.length());
+      };
+
   for (auto const& it : files_) {
     std::filesystem::path file_path(it.first);
     assert(file_path.has_filename());
@@ -662,7 +667,7 @@ void ZenFS::GetZenFSChildrenNoLock(const std::string& dir,
     if (string_starts_with(file_dir, dir_with_terminating_seperator)) {
       if (include_grandchildren ||
           file_dir.length() == dir_with_terminating_seperator.length()) {
-        result->push_back(file_path.filename().string());
+        result->push_back(relative_child_path(file_path));
       }
     }
   }
