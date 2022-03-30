@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v2
         with:
           repository: percona/percona-server
-          ref: Percona-Server-8.0.28-19
+          ref: release-8.0.28-19
           path: harness/percona-context/percona-server
           submodules: true
       - name: Remove default zenfs
