@@ -1717,8 +1717,10 @@ IOStatus ZenFS::MigrateFileExtents(
       zfile->MigrateData(ext->start_ - ZoneFile::SPARSE_HEADER_SIZE,
                          ext->length_ + ZoneFile::SPARSE_HEADER_SIZE,
                          target_zone);
+      zbd_->AddGCBytesWritten(ext->length_ + ZoneFile::SPARSE_HEADER_SIZE);
     } else {
       zfile->MigrateData(ext->start_, ext->length_, target_zone);
+      zbd_->AddGCBytesWritten(ext->length_);
     }
 
     // If the file doesn't exist, skip

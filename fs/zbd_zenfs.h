@@ -90,6 +90,8 @@ class ZonedBlockDevice {
   time_t start_time_;
   std::shared_ptr<Logger> logger_;
   uint32_t finish_threshold_ = 0;
+  std::atomic<uint64_t> bytes_written_{0};
+  std::atomic<uint64_t> gc_bytes_written_{0};
 
   std::atomic<long> active_io_zones_;
   std::atomic<long> open_io_zones_;
@@ -167,6 +169,13 @@ class ZonedBlockDevice {
 
   IOStatus TakeMigrateZone(Zone **out_zone, Env::WriteLifeTimeHint lifetime,
                            uint32_t min_capacity);
+
+  void AddBytesWritten(uint64_t written) { bytes_written_ += written; };
+  void AddGCBytesWritten(uint64_t written) { gc_bytes_written_ += written; };
+  uint64_t GetUserBytesWritten() {
+    return bytes_written_.load() - gc_bytes_written_.load();
+  };
+  uint64_t GetTotalBytesWritten() { return bytes_written_.load(); };
 
  private:
   std::string ErrorToString(int err);
