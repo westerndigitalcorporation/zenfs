@@ -47,6 +47,7 @@ DEFINE_string(restore_path, "", "Path to restore files");
 DEFINE_string(backup_path, "", "Path to backup files");
 DEFINE_string(src_file, "", "Source file path");
 DEFINE_string(dest_file, "", "Destination file path");
+DEFINE_bool(enable_gc, false, "Enable garbage collection");
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -181,7 +182,7 @@ int zenfs_tool_mkfs() {
 
   AddDirSeparatorAtEnd(FLAGS_aux_path);
 
-  s = zenFS->MkFS(FLAGS_aux_path, FLAGS_finish_threshold);
+  s = zenFS->MkFS(FLAGS_aux_path, FLAGS_finish_threshold, FLAGS_enable_gc);
   if (!s.ok()) {
     fprintf(stderr, "Failed to create file system, error: %s\n",
             s.ToString().c_str());

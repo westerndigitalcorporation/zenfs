@@ -106,6 +106,8 @@ void Superblock::GetReport(std::string* reportString) {
   reportString->append(std::to_string(nr_zones_));
   reportString->append("\nFinish Threshold [%]:\t\t");
   reportString->append(std::to_string(finish_treshold_));
+  reportString->append("\nGarbage Collection Enabled:\t");
+  reportString->append(std::to_string(!!(flags_ & FLAGS_ENABLE_GC)));
   reportString->append("\nAuxiliary FS Path:\t\t");
   reportString->append(aux_fs_path_);
   reportString->append("\nZenFS Version:\t\t\t");
@@ -1428,7 +1430,8 @@ Status ZenFS::Mount(bool readonly) {
   return Status::OK();
 }
 
-Status ZenFS::MkFS(std::string aux_fs_p, uint32_t finish_threshold) {
+Status ZenFS::MkFS(std::string aux_fs_p, uint32_t finish_threshold,
+                   bool enable_gc) {
   std::vector<Zone*> metazones = zbd_->GetMetaZones();
   std::unique_ptr<ZenMetaLog> log;
   Zone* meta_zone = nullptr;
@@ -1472,7 +1475,7 @@ Status ZenFS::MkFS(std::string aux_fs_p, uint32_t finish_threshold) {
 
   log.reset(new ZenMetaLog(zbd_, meta_zone));
 
-  Superblock super(zbd_, aux_fs_path, finish_threshold);
+  Superblock super(zbd_, aux_fs_path, finish_threshold, enable_gc);
   std::string super_string;
   super.EncodeTo(&super_string);
 
