@@ -159,6 +159,7 @@ IOStatus Zone::Append(char *data, uint32_t size) {
     wp_ += ret;
     capacity_ -= ret;
     left -= ret;
+    zbd_->AddBytesWritten(ret);
   }
 
   return IOStatus::OK();
