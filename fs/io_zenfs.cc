@@ -645,7 +645,10 @@ IOStatus ZoneFile::RecoverSparseExtents(uint64_t start, uint64_t end,
     extents_.push_back(new ZoneExtent(next_extent_start + SPARSE_HEADER_SIZE,
                                       extent_length, zone));
 
-    uint64_t extent_blocks = 1 + extent_length / block_sz;
+    uint64_t extent_blocks = (extent_length + SPARSE_HEADER_SIZE) / block_sz;
+    if ((extent_length + SPARSE_HEADER_SIZE) % block_sz) {
+      extent_blocks++;
+    }
     next_extent_start += extent_blocks * block_sz;
   }
 
