@@ -150,7 +150,7 @@ IOStatus Zone::Append(char *data, uint32_t size) {
   assert((size % zbd_->GetBlockSize()) == 0);
 
   while (left) {
-    ret = pwrite(fd, ptr, size, wp_);
+    ret = pwrite(fd, ptr, left, wp_);
     if (ret < 0) {
       return IOStatus::IOError(strerror(errno));
     }
@@ -728,11 +728,12 @@ IOStatus ZonedBlockDevice::AllocateEmptyZone(Zone **zone_out) {
 
 int ZonedBlockDevice::DirectRead(char *buf, uint64_t offset, int n) {
   int ret = 0;
+  int left = n;
   int r = -1;
   int f = GetReadDirectFD();
 
-  while (ret < n) {
-    r = pread(f, buf, n, offset);
+  while (left) {
+    r = pread(f, buf, left, offset);
     if (r <= 0) {
       if (r == -1 && errno == EINTR) {
         continue;
@@ -740,6 +741,9 @@ int ZonedBlockDevice::DirectRead(char *buf, uint64_t offset, int n) {
       break;
     }
     ret += r;
+    buf += r;
+    left -= r;
+    offset += r;
   }
 
   if (r < 0) return r;
