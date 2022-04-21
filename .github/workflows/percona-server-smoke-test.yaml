@@ -1,0 +1,33 @@
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+    branches:
+    - master
+name: Percona Server Smoke Test
+jobs:
+  smoke-test:
+    runs-on: self-hosted
+    steps:
+      - name: Clean
+        run: rm -rf ${GITHUB_WORKSPACE}/*
+      - name: Checkout build scripts
+        run: git clone ~/harness.git
+      - name: Create context directory
+        run: cd harness && mkdir percona-context 
+      - name: Build docker image
+        run: cd harness && st -o logs/make-smoke -- make NO_VAGRANT=1 V=1 percona-debian-run 
+      - name: Run smoke test
+        run: cd harness && st --silent -o logs/make-smoke -- disk-select --disk 1TB -- make NO_VAGRANT=1 PERCONA_SERVER_BASE=Percona-Server-8.0.28-19 ZENFS_BRANCH=${GITHUB_SHA} ZENFS_REPO=https://github.com/${GITHUB_REPOSITORY}.git results/percona-server-smoke.xml
+      - name: Collect Results
+        run: cd harness && make NO_VAGRANT=1 upload 
+        if: always()
+      - name: Archive unofficial experimental percona-server deb packages
+        uses: actions/upload-artifact@v3
+        with:
+          name: unofficial-experimental-zenfs-percona-server-deb-packages
+          path: harness/artifacts/unofficial-experimental-zenfs-percona-server-deb-packages.tgz
+      - name: Remove images
+        run: podman rmi --force --all
+        if: always()
