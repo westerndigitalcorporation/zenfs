@@ -163,7 +163,7 @@ class ZonedBlockDevice {
 
   void GetZoneSnapshot(std::vector<ZoneSnapshot> &snapshot);
 
-  int DirectRead(char *buf, uint64_t offset, int n);
+  int Read(char *buf, uint64_t offset, int n, bool direct);
 
   IOStatus ReleaseMigrateZone(Zone *zone);
 

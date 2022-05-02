@@ -728,14 +728,18 @@ IOStatus ZonedBlockDevice::AllocateEmptyZone(Zone **zone_out) {
   return IOStatus::OK();
 }
 
-int ZonedBlockDevice::DirectRead(char *buf, uint64_t offset, int n) {
+int ZonedBlockDevice::Read(char *buf, uint64_t offset, int n, bool direct) {
   int ret = 0;
   int left = n;
   int r = -1;
-  int f = GetReadDirectFD();
+  int f_direct = GetReadDirectFD();
+  int f = GetReadFD();
 
   while (left) {
-    r = pread(f, buf, left, offset);
+    if (direct)
+      r = pread(f_direct, buf, left, offset);
+    else
+      r = pread(f, buf, left, offset);
     if (r <= 0) {
       if (r == -1 && errno == EINTR) {
         continue;
