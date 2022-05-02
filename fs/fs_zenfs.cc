@@ -164,8 +164,7 @@ IOStatus ZenMetaLog::AddRecord(const Slice& slice) {
 }
 
 IOStatus ZenMetaLog::Read(Slice* slice) {
-  int f = zbd_->GetReadFD();
-  const char* data = slice->data();
+  char* data = (char*)slice->data();
   size_t read = 0;
   size_t to_read = slice->size();
   int ret;
@@ -181,7 +180,7 @@ IOStatus ZenMetaLog::Read(Slice* slice) {
   }
 
   while (read < to_read) {
-    ret = pread(f, (void*)(data + read), to_read - read, read_pos_);
+    ret = zbd_->Read(data + read, read_pos_, to_read - read, false);
 
     if (ret == -1 && errno == EINTR) continue;
     if (ret < 0) return IOStatus::IOError("Read failed");

@@ -333,8 +333,6 @@ IOStatus ZoneFile::PositionedRead(uint64_t offset, size_t n, Slice* result,
 
   ReadLock lck(this);
 
-  int f = zbd_->GetReadFD();
-  int f_direct = zbd_->GetReadDirectFD();
   char* ptr;
   uint64_t r_off;
   size_t r_sz;
@@ -383,18 +381,8 @@ IOStatus ZoneFile::PositionedRead(uint64_t offset, size_t n, Slice* result,
       aligned = true;
     }
 
-    if (direct && aligned) {
-      r = pread(f_direct, ptr, pread_sz, r_off);
-    } else {
-      r = pread(f, ptr, pread_sz, r_off);
-    }
-
-    if (r <= 0) {
-      if (r == -1 && errno == EINTR) {
-        continue;
-      }
-      break;
-    }
+    r = zbd_->Read(ptr, r_off, pread_sz, direct && aligned);
+    if (r <= 0) break;
 
     /* Verify and update the the bytes read count (if read size was incremented,
      * for alignment purposes).
@@ -619,7 +607,6 @@ IOStatus ZoneFile::RecoverSparseExtents(uint64_t start, uint64_t end,
   /* Sparse writes, we need to recover each individual segment */
   IOStatus s;
   uint32_t block_sz = GetBlockSize();
-  int f = zbd_->GetReadFD();
   uint64_t next_extent_start = start;
   char* buffer;
   int recovered_segments = 0;
@@ -633,7 +620,7 @@ IOStatus ZoneFile::RecoverSparseExtents(uint64_t start, uint64_t end,
   while (next_extent_start < end) {
     uint64_t extent_length;
 
-    ret = pread(f, (void*)buffer, block_sz, next_extent_start);
+    ret = zbd_->Read(buffer, next_extent_start, block_sz, false);
     if (ret != (int)block_sz) {
       s = IOStatus::IOError("Unexpected read error while recovering");
       break;
@@ -1072,7 +1059,7 @@ IOStatus ZoneFile::MigrateData(uint64_t offset, uint32_t length,
     read_sz = length > read_sz ? read_sz : length;
     pad_sz = read_sz % block_sz == 0 ? 0 : (block_sz - (read_sz % block_sz));
 
-    int r = zbd_->DirectRead(buf, offset, read_sz + pad_sz);
+    int r = zbd_->Read(buf, offset, read_sz + pad_sz, true);
     if (r < 0) {
       free(buf);
       return IOStatus::IOError(strerror(errno));
