@@ -670,6 +670,9 @@ int zenfs_tool_remove_directory() {
 int zenfs_tool_restore() {
   Status status;
   IOStatus io_status;
+  IOOptions opts;
+  IODebugContext dbg;
+  bool is_dir;
 
   if (FLAGS_path.empty()) {
     fprintf(stderr, "Error: Specify --path to be restored.\n");
@@ -677,8 +680,15 @@ int zenfs_tool_restore() {
   }
 
   AddDirSeparatorAtEnd(FLAGS_restore_path);
-  AddDirSeparatorAtEnd(FLAGS_path);
-  ReadWriteLifeTimeHints();
+  std::filesystem::path fpath(FLAGS_path);
+  FLAGS_path = fpath.lexically_normal().string();
+  FileSystem *f_fs = FileSystem::Default().get();
+  status = f_fs->IsDirectory(FLAGS_path, opts, &is_dir, &dbg);
+  if (!status.ok()) {
+    fprintf(stderr, "IsDirectory failed, error: %s\n",
+            status.ToString().c_str());
+    return 1;
+  }
 
   std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(false, true);
   if (!zbd) return 1;
@@ -698,8 +708,17 @@ int zenfs_tool_restore() {
     return 1;
   }
 
-  io_status = zenfs_tool_copy_dir(FileSystem::Default().get(), FLAGS_path,
-                                  zenFS.get(), FLAGS_restore_path);
+  if (!is_dir) {
+    std::string dest_file =
+        FLAGS_restore_path + fpath.lexically_normal().filename().string();
+    io_status = zenfs_tool_copy_file(f_fs, FLAGS_path, zenFS.get(), dest_file);
+  } else {
+    AddDirSeparatorAtEnd(FLAGS_path);
+    ReadWriteLifeTimeHints();
+    io_status =
+        zenfs_tool_copy_dir(f_fs, FLAGS_path, zenFS.get(), FLAGS_restore_path);
+  }
+
   if (!io_status.ok()) {
     fprintf(stderr, "Copy failed, error: %s\n", io_status.ToString().c_str());
     return 1;
