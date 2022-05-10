@@ -5,8 +5,14 @@
 //  (found in the LICENSE.Apache file in the root directory).
 
 #pragma once
-
-#include <filesystem>
+# if __cplusplus >= 201703L
+  #include <filesystem>
+  namespace fs = std::filesystem;
+# else
+  #include <experimental/filesystem>
+  namespace fs = std::experimental::filesystem;
+  fs::path lexically_normal(const fs::path filepath);
+# endif
 #include <memory>
 
 #include "io_zenfs.h"
@@ -17,6 +23,7 @@
 #include "snapshot.h"
 #include "version.h"
 #include "zbd_zenfs.h"
+
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -155,7 +162,7 @@ class ZenFS : public FileSystemWrapper {
 
   void LogFiles();
   void ClearFiles();
-  std::string FormatPathLexically(std::filesystem::path filepath);
+  std::string FormatPathLexically(std::string filepath);
   IOStatus WriteSnapshotLocked(ZenMetaLog* meta_log);
   IOStatus WriteEndRecord(ZenMetaLog* meta_log);
   IOStatus RollMetaZoneLocked();

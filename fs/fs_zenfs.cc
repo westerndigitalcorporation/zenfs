@@ -26,6 +26,57 @@
 
 #define DEFAULT_ZENV_LOG_PATH "/tmp/"
 
+# if __cplusplus < 201703L
+fs::path lexically_normal(const fs::path filepath) {
+  if(filepath.empty())
+    return filepath;
+  
+  fs::path temp;
+  auto start = filepath.begin();
+  auto last = filepath.end();
+  auto stop = last --;
+  // ++ go to next meaningful part after this "/"
+  for(auto iter = start; iter != stop; ++iter) {
+    if(iter->native().size() == 0)
+      continue;
+    // ignore "." except at start or last
+    if(iter->native().size() == 1 &&
+        iter->native()[0] == '.' &&
+        iter != start && 
+        iter != last) {
+          continue;
+        }
+    // when ".." and pre part is not "." or "/" or "..", delete it.
+    if(!temp.empty() &&
+        iter->native().size() == 2 &&
+        iter->native()[0] == '.' &&
+        iter->native()[1] == '.') {
+          auto fn = temp.filename().native();
+          if(fn.size() > 0 &&
+              (fn.size() != 1 || (fn[0] != '.' && fn[0] != '/')) &&
+              (fn.size() != 2 || (fn[0] != '.' && fn[1] != '.'))) {
+                temp.remove_filename();
+              }
+
+          auto next = iter;
+          if(temp.empty() && ++next != stop && next == last && last->native() == ".") {
+              temp /= ".";
+          }
+          continue;
+        }
+    // common case, except last "."
+    if(iter != last || last->native() != ".")
+      temp /= *iter;
+  }
+  return temp;
+}
+# endif
+
+inline std::string concat_file_path (std::string source_dir, std::string child_dir) {
+  fs::path full_path = fs::path(source_dir) / fs::path(child_dir);
+  return full_path.string();
+} 
+
 namespace ROCKSDB_NAMESPACE {
 
 Status Superblock::DecodeFrom(Slice* input) {
@@ -271,8 +322,15 @@ IOStatus ZenFS::Repair() {
   return IOStatus::OK();
 }
 
-std::string ZenFS::FormatPathLexically(std::filesystem::path filepath) {
-  std::filesystem::path ret = "/" / filepath.lexically_normal();
+std::string ZenFS::FormatPathLexically(std::string path) {
+  fs::path filepath = path;
+  # if __cplusplus >= 201703L
+    fs::path ret = "/" / filepath.lexically_normal();
+  # else
+    fs::path ret = lexically_normal(filepath);
+    if(!ret.has_root_path())
+      ret = "/" / ret;
+  # endif
   return ret.string();
 }
 
@@ -639,9 +697,13 @@ void ZenFS::GetZenFSChildrenNoLock(const std::string& dir,
                                    bool include_grandchildren,
                                    std::vector<std::string>* result) {
   auto path_as_string_with_separator_at_end =
-      [](std::filesystem::path const& path) {
+      [](fs::path const& path) {
         auto with_sep = path / "";
-        return with_sep.lexically_normal().string();
+        # if __cplusplus >= 201703L
+          return with_sep.lexically_normal().string();
+        # else
+          return lexically_normal(with_sep).string();
+        # endif
       };
 
   auto string_starts_with = [](std::string const& string,
@@ -650,7 +712,7 @@ void ZenFS::GetZenFSChildrenNoLock(const std::string& dir,
   };
 
   std::string dir_with_terminating_seperator =
-      path_as_string_with_separator_at_end(std::filesystem::path(dir));
+      path_as_string_with_separator_at_end(fs::path(dir));
 
   auto relative_child_path =
       [&dir_with_terminating_seperator](std::string const& full_path) {
@@ -658,7 +720,7 @@ void ZenFS::GetZenFSChildrenNoLock(const std::string& dir,
       };
 
   for (auto const& it : files_) {
-    std::filesystem::path file_path(it.first);
+    fs::path file_path(it.first);
     assert(file_path.has_filename());
 
     std::string file_dir =
@@ -729,7 +791,7 @@ IOStatus ZenFS::DeleteDirRecursiveNoLock(const std::string& dir,
 
   for (const auto& child : children) {
     std::string file_to_delete =
-        (std::filesystem::path(d) / std::filesystem::path(child)).string();
+        concat_file_path(d, child);
     bool is_dir;
 
     s = IsDirectoryNoLock(file_to_delete, options, &is_dir, dbg);
@@ -874,11 +936,8 @@ IOStatus ZenFS::RenameChildNoLock(std::string const& source_dir,
                                   std::string const& child,
                                   const IOOptions& options,
                                   IODebugContext* dbg) {
-  std::string source_child =
-      (std::filesystem::path(source_dir) / std::filesystem::path(child))
-          .string();
-  std::string dest_child =
-      (std::filesystem::path(dest_dir) / std::filesystem::path(child)).string();
+  std::string source_child = concat_file_path(source_dir, child);
+  std::string dest_child = concat_file_path(dest_dir, child);
   return RenameFileNoLock(source_child, dest_child, options, dbg);
 }
 
