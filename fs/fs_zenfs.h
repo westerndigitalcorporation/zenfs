@@ -6,8 +6,17 @@
 
 #pragma once
 
+#if __cplusplus >= 201703L
 #include <filesystem>
+#define CPP17
+#endif
+
+#include <cassert>
+#include <iostream>
 #include <memory>
+#include <sstream>
+#include <string>
+#include <vector>
 
 #include "io_zenfs.h"
 #include "metrics.h"
@@ -155,7 +164,7 @@ class ZenFS : public FileSystemWrapper {
 
   void LogFiles();
   void ClearFiles();
-  std::string FormatPathLexically(std::filesystem::path filepath);
+  std::string FormatPathLexically(std::string filepath);
   IOStatus WriteSnapshotLocked(ZenMetaLog* meta_log);
   IOStatus WriteEndRecord(ZenMetaLog* meta_log);
   IOStatus RollMetaZoneLocked();
@@ -441,6 +450,105 @@ class ZenFS : public FileSystemWrapper {
       const std::string& fname,
       const std::vector<ZoneExtentSnapshot*>& migrate_exts);
 };
+
+// Utility filesystem path implementation
+class Path {
+ public:
+  Path(const std::string& path) : src_path_(path) { Normalize(); }
+
+  // Normalize the input path, keep the root slash and end
+  // terminator, example:
+  //
+  // `//a/b/c    ->   /a/b/c`
+  // `a/b/../c/  ->   a/c/`
+  // `a/b/../c   ->   a/c`
+  std::string Normalize() {
+    if (!normalized_path_.empty()) {
+      return normalized_path_;
+    }
+#ifdef CPP17
+    auto path = std::filesystem::path(src_path_);
+    normalized_path_ = path.lexically_normal();
+    filename_ = path.filename();
+    parent_path_ = path.parent_path();
+    return normalized_path_;
+#endif
+
+    if (src_path_.empty()) {
+      return "";
+    }
+
+    std::stringstream rst;
+    std::vector<std::string> segs;
+
+    std::istringstream iss(src_path_);
+    std::string item;
+    while (std::getline(iss, item, '/')) {
+      if (item == ".." && segs.size() > 0) {
+        segs.pop_back();
+        continue;
+      }
+
+      if (item == ".") {
+        continue;
+      }
+      if (!item.empty()) {
+        segs.emplace_back(item);
+      }
+    }
+
+    // We don't expect strings with the "../" prefix
+    assert(segs[0] != "..");
+
+    // We have a filename only if we don't have a terminator
+    bool has_terminator = *(--src_path_.end()) == '/';
+    if (!has_terminator) {
+      filename_ = *(--segs.end());
+    }
+
+    // Keep the root slash
+    if (src_path_[0] == '/') {
+      rst << "/";
+    }
+
+    for (int i = 0; i < segs.size(); ++i) {
+      rst << segs[i];
+      // The parent path represent higher-level directory, note that if
+      // the source path is already a directory, the result reminds the
+      // same.
+      //
+      // `/a/b/c   ->  /a/b/ `
+      // `/a/b/c/` ->  /a/b/c/ `
+      if (!has_terminator && i == segs.size() - 2) {
+        parent_path_ = rst.str() + "/";
+      }
+      if (!has_terminator && i == segs.size() - 1) {
+        break;
+      }
+      rst << "/";
+    }
+
+    normalized_path_ = rst.str();
+    // If current source path is a directory, the parent path reminds the
+    // same (@see std::filesystem::path::parent_path())
+    if (has_terminator) {
+      parent_path_ = normalized_path_;
+    }
+    return normalized_path_;
+  }
+
+  std::string Parent() const { return parent_path_; }
+
+  std::string Filename() const { return filename_; }
+
+ private:
+  std::string src_path_;
+  std::string normalized_path_;
+  std::string parent_path_;
+  // @see std::filesystem::path::filename()
+  std::string filename_;
+};
+
 #endif  // !defined(ROCKSDB_LITE) && defined(OS_LINUX)
 
 Status NewZenFS(
