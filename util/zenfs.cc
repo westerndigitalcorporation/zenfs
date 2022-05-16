@@ -680,7 +680,7 @@ int zenfs_tool_restore() {
   }
 
   AddDirSeparatorAtEnd(FLAGS_restore_path);
-  std::filesystem::path fpath(FLAGS_path);
+  fs::path fpath(FLAGS_path);
   FLAGS_path = fpath.lexically_normal().string();
   FileSystem *f_fs = FileSystem::Default().get();
   status = f_fs->IsDirectory(FLAGS_path, opts, &is_dir, &dbg);

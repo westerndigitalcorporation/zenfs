@@ -6,7 +6,14 @@
 
 #pragma once
 
+#if __cplusplus < 201703L
+#include "filesystem_utility.h"
+namespace fs = filesystem_utility;
+#else
 #include <filesystem>
+namespace fs = std::filesystem;
+#endif
+
 #include <memory>
 
 #include "io_zenfs.h"
@@ -155,7 +162,7 @@ class ZenFS : public FileSystemWrapper {
 
   void LogFiles();
   void ClearFiles();
-  std::string FormatPathLexically(std::filesystem::path filepath);
+  std::string FormatPathLexically(fs::path filepath);
   IOStatus WriteSnapshotLocked(ZenMetaLog* meta_log);
   IOStatus WriteEndRecord(ZenMetaLog* meta_log);
   IOStatus RollMetaZoneLocked();
