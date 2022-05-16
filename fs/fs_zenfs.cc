@@ -271,8 +271,8 @@ IOStatus ZenFS::Repair() {
   return IOStatus::OK();
 }
 
-std::string ZenFS::FormatPathLexically(std::filesystem::path filepath) {
-  std::filesystem::path ret = "/" / filepath.lexically_normal();
+std::string ZenFS::FormatPathLexically(fs::path filepath) {
+  fs::path ret = fs::path("/") / filepath.lexically_normal();
   return ret.string();
 }
 
@@ -638,11 +638,10 @@ IOStatus ZenFS::ReopenWritableFile(const std::string& filename,
 void ZenFS::GetZenFSChildrenNoLock(const std::string& dir,
                                    bool include_grandchildren,
                                    std::vector<std::string>* result) {
-  auto path_as_string_with_separator_at_end =
-      [](std::filesystem::path const& path) {
-        auto with_sep = path / "";
-        return with_sep.lexically_normal().string();
-      };
+  auto path_as_string_with_separator_at_end = [](fs::path const& path) {
+    fs::path with_sep = path / fs::path("");
+    return with_sep.lexically_normal().string();
+  };
 
   auto string_starts_with = [](std::string const& string,
                                std::string const& needle) {
@@ -650,7 +649,7 @@ void ZenFS::GetZenFSChildrenNoLock(const std::string& dir,
   };
 
   std::string dir_with_terminating_seperator =
-      path_as_string_with_separator_at_end(std::filesystem::path(dir));
+      path_as_string_with_separator_at_end(fs::path(dir));
 
   auto relative_child_path =
       [&dir_with_terminating_seperator](std::string const& full_path) {
@@ -658,7 +657,7 @@ void ZenFS::GetZenFSChildrenNoLock(const std::string& dir,
       };
 
   for (auto const& it : files_) {
-    std::filesystem::path file_path(it.first);
+    fs::path file_path(it.first);
     assert(file_path.has_filename());
 
     std::string file_dir =
@@ -667,7 +666,7 @@ void ZenFS::GetZenFSChildrenNoLock(const std::string& dir,
     if (string_starts_with(file_dir, dir_with_terminating_seperator)) {
       if (include_grandchildren ||
           file_dir.length() == dir_with_terminating_seperator.length()) {
-        result->push_back(relative_child_path(file_path));
+        result->push_back(relative_child_path(file_path.string()));
       }
     }
   }
@@ -728,8 +727,7 @@ IOStatus ZenFS::DeleteDirRecursiveNoLock(const std::string& dir,
   }
 
   for (const auto& child : children) {
-    std::string file_to_delete =
-        (std::filesystem::path(d) / std::filesystem::path(child)).string();
+    std::string file_to_delete = (fs::path(d) / fs::path(child)).string();
     bool is_dir;
 
     s = IsDirectoryNoLock(file_to_delete, options, &is_dir, dbg);
@@ -874,11 +872,8 @@ IOStatus ZenFS::RenameChildNoLock(std::string const& source_dir,
                                   std::string const& child,
                                   const IOOptions& options,
                                   IODebugContext* dbg) {
-  std::string source_child =
-      (std::filesystem::path(source_dir) / std::filesystem::path(child))
-          .string();
-  std::string dest_child =
-      (std::filesystem::path(dest_dir) / std::filesystem::path(child)).string();
+  std::string source_child = (fs::path(source_dir) / fs::path(child)).string();
+  std::string dest_child = (fs::path(dest_dir) / fs::path(child)).string();
   return RenameFileNoLock(source_child, dest_child, options, dbg);
 }
 
