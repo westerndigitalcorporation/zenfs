@@ -428,12 +428,13 @@ void ZonedBlockDevice::LogGarbageInfo() {
   // the result to be precise.
   int zone_gc_stat[12] = {0};
   for (auto z : io_zones) {
-    if (z->IsEmpty()) {
-      zone_gc_stat[0]++;
+    if (z->IsBusy() || !z->Acquire()) {
       continue;
     }
 
-    if (!z->Acquire()) {
+    if (z->IsEmpty()) {
+      zone_gc_stat[0]++;
+      z->Release();
       continue;
     }
 
