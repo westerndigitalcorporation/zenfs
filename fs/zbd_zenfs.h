@@ -40,7 +40,8 @@ class Zone {
   std::atomic_bool busy_;
 
  public:
-  explicit Zone(ZonedBlockDevice *zbd, struct zbd_zone *z);
+  explicit Zone(ZonedBlockDevice *zbd, uint64_t start, uint64_t max_capacity,
+                uint64_t wp, bool writable);
 
   uint64_t start_;
   uint64_t capacity_; /* remaining capacity */
@@ -76,8 +77,45 @@ class Zone {
   inline IOStatus CheckRelease();
 };
 
+class ZoneList {
+ private:
+  void *data_;
+  unsigned int zone_count_;
+
+ public:
+  ZoneList(void *data, unsigned int zone_count)
+      : data_(data), zone_count_(zone_count){};
+  void *GetData() { return data_; };
+  unsigned int ZoneCount() { return zone_count_; };
+  ~ZoneList() { free(data_); };
+};
+
+class ZonedBlockDeviceBackend {
+ public:
+  virtual std::unique_ptr<ZoneList> ListZones(int fd,
+                                              uint64_t addr_space_sz) = 0;
+  virtual bool ZoneIsSwr(std::unique_ptr<ZoneList> &zones,
+                         unsigned int idx) = 0;
+  virtual bool ZoneIsOffline(std::unique_ptr<ZoneList> &zones,
+                             unsigned int idx) = 0;
+  virtual bool ZoneIsWritable(std::unique_ptr<ZoneList> &zones,
+                              unsigned int idx) = 0;
+  virtual bool ZoneIsActive(std::unique_ptr<ZoneList> &zones,
+                            unsigned int idx) = 0;
+  virtual bool ZoneIsOpen(std::unique_ptr<ZoneList> &zones,
+                          unsigned int idx) = 0;
+  virtual uint64_t ZoneStart(std::unique_ptr<ZoneList> &zones,
+                             unsigned int idx) = 0;
+  virtual uint64_t ZoneMaxCapacity(std::unique_ptr<ZoneList> &zones,
+                                   unsigned int idx) = 0;
+  virtual uint64_t ZoneWp(std::unique_ptr<ZoneList> &zones,
+                          unsigned int idx) = 0;
+  virtual ~ZonedBlockDeviceBackend() = 0;
+};
+
 class ZonedBlockDevice {
  private:
+  std::unique_ptr<ZonedBlockDeviceBackend> zbd_be_;
   std::string filename_;
   uint32_t block_sz_;
   uint64_t zone_sz_;

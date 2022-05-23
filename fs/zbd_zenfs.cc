@@ -46,17 +46,84 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-Zone::Zone(ZonedBlockDevice *zbd, struct zbd_zone *z)
+ZonedBlockDeviceBackend::~ZonedBlockDeviceBackend() {}
+
+class ZbdlibBackend : public ZonedBlockDeviceBackend {
+ public:
+  explicit ZbdlibBackend() {}
+  ~ZbdlibBackend() {}
+
+  std::unique_ptr<ZoneList> ListZones(int fd, uint64_t addr_space_sz);
+
+  bool ZoneIsSwr(std::unique_ptr<ZoneList> &zones, unsigned int idx) {
+    struct zbd_zone *z = &((struct zbd_zone *)zones->GetData())[idx];
+    return zbd_zone_type(z) == ZBD_ZONE_TYPE_SWR;
+  };
+
+  bool ZoneIsOffline(std::unique_ptr<ZoneList> &zones, unsigned int idx) {
+    struct zbd_zone *z = &((struct zbd_zone *)zones->GetData())[idx];
+    return zbd_zone_offline(z);
+  };
+
+  bool ZoneIsWritable(std::unique_ptr<ZoneList> &zones, unsigned int idx) {
+    struct zbd_zone *z = &((struct zbd_zone *)zones->GetData())[idx];
+    return !(zbd_zone_full(z) || zbd_zone_offline(z) || zbd_zone_rdonly(z));
+  };
+
+  bool ZoneIsActive(std::unique_ptr<ZoneList> &zones, unsigned int idx) {
+    struct zbd_zone *z = &((struct zbd_zone *)zones->GetData())[idx];
+    return zbd_zone_imp_open(z) || zbd_zone_exp_open(z) || zbd_zone_closed(z);
+  };
+
+  bool ZoneIsOpen(std::unique_ptr<ZoneList> &zones, unsigned int idx) {
+    struct zbd_zone *z = &((struct zbd_zone *)zones->GetData())[idx];
+    return zbd_zone_imp_open(z) || zbd_zone_exp_open(z);
+  };
+
+  uint64_t ZoneStart(std::unique_ptr<ZoneList> &zones, unsigned int idx) {
+    struct zbd_zone *z = &((struct zbd_zone *)zones->GetData())[idx];
+    return zbd_zone_start(z);
+  };
+
+  uint64_t ZoneMaxCapacity(std::unique_ptr<ZoneList> &zones, unsigned int idx) {
+    struct zbd_zone *z = &((struct zbd_zone *)zones->GetData())[idx];
+    return zbd_zone_capacity(z);
+  };
+
+  uint64_t ZoneWp(std::unique_ptr<ZoneList> &zones, unsigned int idx) {
+    struct zbd_zone *z = &((struct zbd_zone *)zones->GetData())[idx];
+    return zbd_zone_wp(z);
+  };
+};
+
+std::unique_ptr<ZoneList> ZbdlibBackend::ListZones(int fd,
+                                                   uint64_t addr_space_sz) {
+  int ret;
+  void *zones;
+  unsigned int nr_zones;
+
+  ret = zbd_list_zones(fd, 0, addr_space_sz, ZBD_RO_ALL,
+                       (struct zbd_zone **)&zones, &nr_zones);
+  if (ret) {
+    return nullptr;
+  }
+
+  std::unique_ptr<ZoneList> zl(new ZoneList(zones, nr_zones));
+
+  return zl;
+}
+
+Zone::Zone(ZonedBlockDevice *zbd, uint64_t start, uint64_t max_capacity,
+           uint64_t wp, bool writable)
     : zbd_(zbd),
       busy_(false),
-      start_(zbd_zone_start(z)),
-      max_capacity_(zbd_zone_capacity(z)),
-      wp_(zbd_zone_wp(z)) {
+      start_(start),
+      max_capacity_(max_capacity),
+      wp_(wp) {
   lifetime_ = Env::WLTH_NOT_SET;
   used_capacity_ = 0;
   capacity_ = 0;
-  if (!(zbd_zone_full(z) || zbd_zone_offline(z) || zbd_zone_rdonly(z)))
-    capacity_ = zbd_zone_capacity(z) - (zbd_zone_wp(z) - zbd_zone_start(z));
+  if (writable) capacity_ = max_capacity - (wp - start);
 }
 
 bool Zone::IsUsed() { return (used_capacity_ > 0); }
@@ -190,6 +257,7 @@ ZonedBlockDevice::ZonedBlockDevice(std::string bdevname,
       write_f_(-1),
       logger_(logger),
       metrics_(metrics) {
+  zbd_be_ = std::make_unique<ZbdlibBackend>();
   Info(logger_, "New Zoned Block Device: %s", filename_.c_str());
 }
 
@@ -224,8 +292,7 @@ IOStatus ZonedBlockDevice::CheckScheduler() {
 }
 
 IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
-  struct zbd_zone *zone_rep;
-  unsigned int reported_zones;
+  std::unique_ptr<ZoneList> zone_rep;
   uint64_t addr_space_sz;
   zbd_info info;
   Status s;
@@ -233,7 +300,6 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   uint64_t m = 0;
   // Reserve one zone for metadata and another one for extent migration
   int reserved_zones = 2;
-  int ret;
 
   if (!readonly && !exclusive)
     return IOStatus::InvalidArgument("Write opens must be exclusive");
@@ -299,56 +365,59 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
 
   addr_space_sz = (uint64_t)nr_zones_ * zone_sz_;
 
-  ret = zbd_list_zones(read_f_, 0, addr_space_sz, ZBD_RO_ALL, &zone_rep,
-                       &reported_zones);
-
-  if (ret || reported_zones != nr_zones_) {
-    Error(logger_, "Failed to list zones, err: %d", ret);
+  zone_rep = zbd_be_->ListZones(read_f_, addr_space_sz);
+  if (zone_rep == nullptr || zone_rep->ZoneCount() != nr_zones_) {
+    Error(logger_, "Failed to list zones");
     return IOStatus::IOError("Failed to list zones");
   }
 
-  while (m < ZENFS_META_ZONES && i < reported_zones) {
-    struct zbd_zone *z = &zone_rep[i++];
+  while (m < ZENFS_META_ZONES && i < zone_rep->ZoneCount()) {
     /* Only use sequential write required zones */
-    if (zbd_zone_type(z) == ZBD_ZONE_TYPE_SWR) {
-      if (!zbd_zone_offline(z)) {
-        meta_zones.push_back(new Zone(this, z));
+    if (zbd_be_->ZoneIsSwr(zone_rep, i)) {
+      if (!zbd_be_->ZoneIsOffline(zone_rep, i)) {
+        meta_zones.push_back(new Zone(this, zbd_be_->ZoneStart(zone_rep, i),
+                                      zbd_be_->ZoneMaxCapacity(zone_rep, i),
+                                      zbd_be_->ZoneWp(zone_rep, i),
+                                      zbd_be_->ZoneIsWritable(zone_rep, i)));
       }
       m++;
     }
+    i++;
   }
 
   active_io_zones_ = 0;
   open_io_zones_ = 0;
 
-  for (; i < reported_zones; i++) {
-    struct zbd_zone *z = &zone_rep[i];
+  for (; i < zone_rep->ZoneCount(); i++) {
     /* Only use sequential write required zones */
-    if (zbd_zone_type(z) == ZBD_ZONE_TYPE_SWR) {
-      if (!zbd_zone_offline(z)) {
-        Zone *newZone = new Zone(this, z);
+    if (zbd_be_->ZoneIsSwr(zone_rep, i)) {
+      if (!zbd_be_->ZoneIsOffline(zone_rep, i)) {
+        Zone *newZone = new Zone(this, zbd_be_->ZoneStart(zone_rep, i),
+                                 zbd_be_->ZoneMaxCapacity(zone_rep, i),
+                                 zbd_be_->ZoneWp(zone_rep, i),
+                                 zbd_be_->ZoneIsWritable(zone_rep, i));
         if (!newZone->Acquire()) {
           assert(false);
           return IOStatus::Corruption("Failed to set busy flag of zone " +
                                       std::to_string(newZone->GetZoneNr()));
         }
         io_zones.push_back(newZone);
-        if (zbd_zone_imp_open(z) || zbd_zone_exp_open(z) ||
-            zbd_zone_closed(z)) {
+        if (zbd_be_->ZoneIsActive(zone_rep, i)) {
           active_io_zones_++;
-          if (zbd_zone_imp_open(z) || zbd_zone_exp_open(z)) {
+          if (zbd_be_->ZoneIsOpen(zone_rep, i)) {
             if (!readonly) {
               newZone->Close();
             }
           }
         }
         IOStatus status = newZone->CheckRelease();
-        if (!status.ok()) return status;
+        if (!status.ok()) {
+          return status;
+        }
       }
     }
   }
 
-  free(zone_rep);
   start_time_ = time(NULL);
 
   return IOStatus::OK();
