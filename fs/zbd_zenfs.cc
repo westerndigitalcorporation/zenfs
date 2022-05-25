@@ -69,6 +69,7 @@ class ZbdlibBackend : public ZonedBlockDeviceBackend {
   std::unique_ptr<ZoneList> ListZones();
   IOStatus Reset(uint64_t start, bool *offline, uint64_t *max_capacity);
   IOStatus Finish(uint64_t start);
+  IOStatus Close(uint64_t start);
   int Read(char *buf, int size, uint64_t pos, bool direct);
   int Write(char *data, uint32_t size, uint64_t pos);
 
@@ -257,6 +258,15 @@ IOStatus ZbdlibBackend::Finish(uint64_t start) {
   return IOStatus::OK();
 }
 
+IOStatus ZbdlibBackend::Close(uint64_t start) {
+  int ret;
+
+  ret = zbd_close_zones(write_f_, start, zone_sz_);
+  if (ret) return IOStatus::IOError("Zone close failed\n");
+
+  return IOStatus::OK();
+}
+
 int ZbdlibBackend::Read(char *buf, int size, uint64_t pos, bool direct) {
   return pread(direct ? read_direct_f_ : read_f_, buf, size, pos);
 }
@@ -331,15 +341,11 @@ IOStatus Zone::Finish() {
 }
 
 IOStatus Zone::Close() {
-  size_t zone_sz = zbd_->GetZoneSize();
-  int fd = zbd_be_->GetWriteFD();
-  int ret;
-
   assert(IsBusy());
 
   if (!(IsEmpty() || IsFull())) {
-    ret = zbd_close_zones(fd, start_, zone_sz);
-    if (ret) return IOStatus::IOError("Zone close failed\n");
+    IOStatus ios = zbd_be_->Close(start_);
+    if (ios != IOStatus::OK()) return ios;
   }
 
   return IOStatus::OK();
