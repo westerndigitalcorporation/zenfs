@@ -128,10 +128,6 @@ class ZonedBlockDeviceBackend {
   virtual uint64_t ZoneWp(std::unique_ptr<ZoneList> &zones,
                           unsigned int idx) = 0;
   virtual ~ZonedBlockDeviceBackend() = 0;
-
-  virtual int GetReadFD() = 0;
-  virtual int GetReadDirectFD() = 0;
-  virtual int GetWriteFD() = 0;
 };
 
 class ZonedBlockDevice {
