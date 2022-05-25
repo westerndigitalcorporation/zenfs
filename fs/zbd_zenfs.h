@@ -104,6 +104,8 @@ class ZonedBlockDeviceBackend {
                         unsigned int *max_active_zones,
                         unsigned int *max_open_zones) = 0;
   virtual std::unique_ptr<ZoneList> ListZones() = 0;
+  virtual int Read(char *buf, int size, uint64_t pos, bool direct) = 0;
+  virtual int Write(char *data, uint32_t size, uint64_t pos) = 0;
   virtual bool ZoneIsSwr(std::unique_ptr<ZoneList> &zones,
                          unsigned int idx) = 0;
   virtual bool ZoneIsOffline(std::unique_ptr<ZoneList> &zones,
