@@ -67,6 +67,8 @@ class ZbdlibBackend : public ZonedBlockDeviceBackend {
                 uint64_t *zone_size, uint32_t *nr_zones,
                 unsigned int *max_active_zones, unsigned int *max_open_zones);
   std::unique_ptr<ZoneList> ListZones();
+  int Read(char *buf, int size, uint64_t pos, bool direct);
+  int Write(char *data, uint32_t size, uint64_t pos);
 
   bool ZoneIsSwr(std::unique_ptr<ZoneList> &zones, unsigned int idx) {
     struct zbd_zone *z = &((struct zbd_zone *)zones->GetData())[idx];
@@ -220,6 +222,14 @@ std::unique_ptr<ZoneList> ZbdlibBackend::ListZones() {
   return zl;
 }
 
+int ZbdlibBackend::Read(char *buf, int size, uint64_t pos, bool direct) {
+  return pread(direct ? read_direct_f_ : read_f_, buf, size, pos);
+}
+
+int ZbdlibBackend::Write(char *data, uint32_t size, uint64_t pos) {
+  return pwrite(write_f_, data, size, pos);
+}
+
 Zone::Zone(ZonedBlockDevice *zbd, ZonedBlockDeviceBackend *zbd_be,
            std::unique_ptr<ZoneList> &zones, unsigned int idx)
     : zbd_(zbd),
@@ -317,7 +327,6 @@ IOStatus Zone::Append(char *data, uint32_t size) {
   zbd_->GetMetrics()->ReportThroughput(ZENFS_ZONE_WRITE_THROUGHPUT, size);
   char *ptr = data;
   uint32_t left = size;
-  int fd = zbd_be_->GetWriteFD();
   int ret;
 
   if (capacity_ < size)
@@ -326,7 +335,7 @@ IOStatus Zone::Append(char *data, uint32_t size) {
   assert((size % zbd_->GetBlockSize()) == 0);
 
   while (left) {
-    ret = pwrite(fd, ptr, left, wp_);
+    ret = zbd_be_->Write(ptr, left, wp_);
     if (ret < 0) {
       return IOStatus::IOError(strerror(errno));
     }
@@ -828,14 +837,9 @@ int ZonedBlockDevice::Read(char *buf, uint64_t offset, int n, bool direct) {
   int ret = 0;
   int left = n;
   int r = -1;
-  int f_direct = zbd_be_->GetReadDirectFD();
-  int f = zbd_be_->GetReadFD();
 
   while (left) {
-    if (direct)
-      r = pread(f_direct, buf, left, offset);
-    else
-      r = pread(f, buf, left, offset);
+    r = zbd_be_->Read(buf, left, offset, direct);
     if (r <= 0) {
       if (r == -1 && errno == EINTR) {
         continue;
