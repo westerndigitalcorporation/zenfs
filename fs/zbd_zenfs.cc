@@ -67,6 +67,7 @@ class ZbdlibBackend : public ZonedBlockDeviceBackend {
                 uint64_t *zone_size, uint32_t *nr_zones,
                 unsigned int *max_active_zones, unsigned int *max_open_zones);
   std::unique_ptr<ZoneList> ListZones();
+  IOStatus Reset(uint64_t start, bool *offline, uint64_t *max_capacity);
   int Read(char *buf, int size, uint64_t pos, bool direct);
   int Write(char *data, uint32_t size, uint64_t pos);
 
@@ -222,6 +223,30 @@ std::unique_ptr<ZoneList> ZbdlibBackend::ListZones() {
   return zl;
 }
 
+IOStatus ZbdlibBackend::Reset(uint64_t start, bool *offline,
+                              uint64_t *max_capacity) {
+  unsigned int report = 1;
+  struct zbd_zone z;
+  int ret;
+
+  ret = zbd_reset_zones(write_f_, start, zone_sz_);
+  if (ret) return IOStatus::IOError("Zone reset failed\n");
+
+  ret = zbd_report_zones(read_f_, start, zone_sz_, ZBD_RO_ALL, &z, &report);
+
+  if (ret || (report != 1)) return IOStatus::IOError("Zone report failed\n");
+
+  if (zbd_zone_offline(&z)) {
+    *offline = true;
+    *max_capacity = 0;
+  } else {
+    *offline = false;
+    *max_capacity = zbd_zone_capacity(&z);
+  }
+
+  return IOStatus::OK();
+}
+
 int ZbdlibBackend::Read(char *buf, int size, uint64_t pos, bool direct) {
   return pread(direct ? read_direct_f_ : read_f_, buf, size, pos);
 }
@@ -263,26 +288,19 @@ void Zone::EncodeJson(std::ostream &json_stream) {
 }
 
 IOStatus Zone::Reset() {
-  size_t zone_sz = zbd_->GetZoneSize();
-  unsigned int report = 1;
-  struct zbd_zone z;
-  int ret;
+  bool offline;
+  uint64_t max_capacity;
 
   assert(!IsUsed());
   assert(IsBusy());
 
-  ret = zbd_reset_zones(zbd_be_->GetWriteFD(), start_, zone_sz);
-  if (ret) return IOStatus::IOError("Zone reset failed\n");
+  IOStatus ios = zbd_be_->Reset(start_, &offline, &max_capacity);
+  if (ios != IOStatus::OK()) return ios;
 
-  ret = zbd_report_zones(zbd_be_->GetReadFD(), start_, zone_sz, ZBD_RO_ALL, &z,
-                         &report);
-
-  if (ret || (report != 1)) return IOStatus::IOError("Zone report failed\n");
-
-  if (zbd_zone_offline(&z))
+  if (offline)
     capacity_ = 0;
   else
-    max_capacity_ = capacity_ = zbd_zone_capacity(&z);
+    max_capacity_ = capacity_ = max_capacity;
 
   wp_ = start_;
   lifetime_ = Env::WLTH_NOT_SET;
