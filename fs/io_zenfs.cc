@@ -502,7 +502,7 @@ IOStatus ZoneFile::BufferedAppend(char* buffer, uint32_t data_size) {
         return s;
       }
       if (left) {
-        memcpy((void*)(buffer), (void*)(buffer + wr_size), left);
+        memmove((void*)(buffer), (void*)(buffer + wr_size), left);
       }
       s = AllocateNewZone();
       if (!s.ok()) return s;
@@ -560,8 +560,8 @@ IOStatus ZoneFile::SparseAppend(char* sparse_buffer, uint32_t data_size) {
         return s;
       }
       if (left) {
-        memcpy((void*)(sparse_buffer + ZoneFile::SPARSE_HEADER_SIZE),
-               (void*)(sparse_buffer + wr_size), left);
+        memmove((void*)(sparse_buffer + ZoneFile::SPARSE_HEADER_SIZE),
+                (void*)(sparse_buffer + wr_size), left);
       }
       s = AllocateNewZone();
       if (!s.ok()) return s;
