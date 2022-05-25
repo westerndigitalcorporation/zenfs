@@ -113,10 +113,6 @@ class ZbdlibBackend : public ZonedBlockDeviceBackend {
     return zbd_zone_wp(z);
   };
 
-  int GetReadFD() { return read_f_; }
-  int GetReadDirectFD() { return read_direct_f_; }
-  int GetWriteFD() { return write_f_; }
-
  private:
   IOStatus CheckScheduler();
   std::string ErrorToString(int err);
