@@ -32,16 +32,37 @@ class ZoneFsFile {
   int GetFd() { return fd_; }
 };
 
+class ZoneFsFileCache {
+ private:
+  std::list<std::pair<uint64_t, std::shared_ptr<ZoneFsFile>>> list_;
+  std::unordered_map<
+      uint64_t,
+      std::list<std::pair<uint64_t, std::shared_ptr<ZoneFsFile>>>::iterator>
+      map_;
+  std::mutex mtx_;
+  unsigned max_;
+  int flags_;
+
+ public:
+  explicit ZoneFsFileCache(int flags);
+  ~ZoneFsFileCache();
+
+  void Put(uint64_t zone);
+  std::shared_ptr<ZoneFsFile> Get(uint64_t zone, std::string filename);
+  void Resize(unsigned new_size);
+
+ private:
+  void Prune(unsigned limit);
+};
+
 class ZoneFsBackend : public ZonedBlockDeviceBackend {
  private:
   std::string mountpoint_;
   int zone_zero_fd_;
   bool readonly_;
-  std::pair<uint64_t, std::shared_ptr<ZoneFsFile>> rd_fd_;
-  std::pair<uint64_t, std::shared_ptr<ZoneFsFile>> direct_rd_fd_;
-  std::mutex zone_rd_fds_mtx_;
-  std::map<uint64_t, std::shared_ptr<ZoneFsFile>> wr_fds_;
-  std::mutex zone_wr_fds_mtx_;
+  ZoneFsFileCache rd_fds_;
+  ZoneFsFileCache direct_rd_fds_;
+  ZoneFsFileCache wr_fds_;
 
  public:
   explicit ZoneFsBackend(std::string mountpoint);
