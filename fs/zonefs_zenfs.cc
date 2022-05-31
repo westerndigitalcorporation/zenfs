@@ -31,15 +31,71 @@
   (((_f_mode) &                            \
     (S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP | S_IWOTH)) == 0)
 #define ZENFS_ZONEFS_DEFAULT_MAX_LIMIT 14
+#define ZENFS_ZONEFS_DEFAULT_MAX_RD_LIMIT 100
 
 namespace ROCKSDB_NAMESPACE {
+
+ZoneFsFileCache::ZoneFsFileCache(int flags) {
+  if (flags & O_RDONLY)
+    max_ = ZENFS_ZONEFS_DEFAULT_MAX_RD_LIMIT;
+  else
+    max_ = ZENFS_ZONEFS_DEFAULT_MAX_LIMIT;
+  flags_ = flags;
+}
+
+ZoneFsFileCache::~ZoneFsFileCache() {}
+
+void ZoneFsFileCache::Put(uint64_t zone) {
+  std::lock_guard<std::mutex> lock(mtx_);
+  auto entry = map_.find(zone);
+  if (entry != map_.end()) {
+    list_.erase(entry->second);
+    map_.erase(entry);
+  }
+}
+
+void ZoneFsFileCache::Prune(unsigned limit) {
+  while (list_.size() > limit) {
+    map_.erase(list_.rbegin()->first);
+    list_.pop_back();
+  }
+}
+
+std::shared_ptr<ZoneFsFile> ZoneFsFileCache::Get(uint64_t zone,
+                                                 std::string filename) {
+  std::lock_guard<std::mutex> lock(mtx_);
+  std::shared_ptr<ZoneFsFile> zoneFsFile(nullptr);
+  auto entry = map_.find(zone);
+
+  if (entry == map_.end()) {
+    int fd = open(filename.c_str(), flags_);
+    if (fd == -1) return nullptr;
+    Prune(max_ - 1);
+    zoneFsFile = std::make_shared<ZoneFsFile>(fd);
+    list_.emplace_front(zone, zoneFsFile);
+    map_.emplace(zone, list_.begin());
+  } else {
+    zoneFsFile = entry->second->second;
+    list_.splice(list_.begin(), list_, entry->second);
+  }
+  return zoneFsFile;
+}
+
+void ZoneFsFileCache::Resize(unsigned new_size) {
+  std::lock_guard<std::mutex> lock(mtx_);
+  if (new_size < max_) {
+    Prune(new_size);
+  }
+  max_ = new_size;
+}
 
 ZoneFsBackend::ZoneFsBackend(std::string mountpoint)
     : mountpoint_(mountpoint),
       zone_zero_fd_(-1),
       readonly_(false),
-      rd_fd_(0, nullptr),
-      direct_rd_fd_(0, nullptr) {}
+      rd_fds_(O_RDONLY),
+      direct_rd_fds_(O_RDONLY | O_DIRECT),
+      wr_fds_(O_WRONLY | O_DIRECT) {}
 
 ZoneFsBackend::~ZoneFsBackend() {
   if (zone_zero_fd_ != -1) {
@@ -149,6 +205,8 @@ IOStatus ZoneFsBackend::Open(bool readonly,
     *max_active_zones = *max_open_zones = ZENFS_ZONEFS_DEFAULT_MAX_LIMIT;
   }
 
+  wr_fds_.Resize(*max_active_zones);
+
   *block_size = block_sz_;
   *zone_size = zone_sz_;
   *nr_zones = nr_zones_;
@@ -223,51 +281,23 @@ IOStatus ZoneFsBackend::Finish(uint64_t start) {
 
 std::shared_ptr<ZoneFsFile> ZoneFsBackend::GetZoneFile(uint64_t start,
                                                        int flags) {
-  uint64_t zone_nr = start / zone_sz_;
+  std::shared_ptr<ZoneFsFile> zoneFsFile(nullptr);
 
   if (flags & O_WRONLY) {
-    std::lock_guard<std::mutex> map_lock(zone_wr_fds_mtx_);
-    std::map<uint64_t, std::shared_ptr<ZoneFsFile>>::iterator open_fd =
-        wr_fds_.find(zone_nr);
-
-    if (open_fd == wr_fds_.end()) {
-      std::string filename = LBAToZoneFile(start);
-      int fd = open(filename.c_str(), flags);
-      if (fd == -1) return nullptr;
-
-      wr_fds_[zone_nr] = std::make_shared<ZoneFsFile>(fd);
-      return wr_fds_[zone_nr];
-    } else {
-      return open_fd->second;
-    }
+    zoneFsFile = wr_fds_.Get(start / zone_sz_, LBAToZoneFile(start));
+  } else if (flags & O_DIRECT) {
+    zoneFsFile = direct_rd_fds_.Get(start / zone_sz_, LBAToZoneFile(start));
   } else {
-    std::lock_guard<std::mutex> map_lock(zone_rd_fds_mtx_);
-    std::pair<uint64_t, std::shared_ptr<ZoneFsFile>> *fd_cache =
-        (flags & O_DIRECT) ? &direct_rd_fd_ : &rd_fd_;
-
-    if (fd_cache->second == nullptr || fd_cache->first != zone_nr) {
-      std::string filename = LBAToZoneFile(start);
-      int fd = open(filename.c_str(), flags);
-      if (fd == -1) return nullptr;
-
-      fd_cache->first = zone_nr;
-      fd_cache->second = std::make_shared<ZoneFsFile>(fd);
-    }
-    return fd_cache->second;
+    zoneFsFile = rd_fds_.Get(start / zone_sz_, LBAToZoneFile(start));
   }
+  return zoneFsFile;
 }
 
 void ZoneFsBackend::PutZoneFile(uint64_t start, int flags) {
   uint64_t zone_nr = start / zone_sz_;
 
   if (flags & O_WRONLY) {
-    std::lock_guard<std::mutex> map_lock(zone_wr_fds_mtx_);
-    std::map<uint64_t, std::shared_ptr<ZoneFsFile>>::iterator open_fd =
-        wr_fds_.find(zone_nr);
-
-    if (open_fd != wr_fds_.end()) {
-      wr_fds_.erase(open_fd);
-    }
+    wr_fds_.Put(zone_nr);
   }
 }
 
