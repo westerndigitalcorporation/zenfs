@@ -20,10 +20,27 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+class ZoneFsFile {
+ private:
+  int fd_;
+
+ public:
+  ZoneFsFile(int fd) : fd_(fd) {}
+
+  ~ZoneFsFile() { close(fd_); }
+
+  int GetFd() { return fd_; }
+};
+
 class ZoneFsBackend : public ZonedBlockDeviceBackend {
  private:
   std::string mountpoint_;
   bool readonly_;
+  std::pair<uint64_t, std::shared_ptr<ZoneFsFile>> rd_fd_;
+  std::pair<uint64_t, std::shared_ptr<ZoneFsFile>> direct_rd_fd_;
+  std::mutex zone_rd_fds_mtx_;
+  std::map<uint64_t, std::shared_ptr<ZoneFsFile>> wr_fds_;
+  std::mutex zone_wr_fds_mtx_;
 
  public:
   explicit ZoneFsBackend(std::string mountpoint);
@@ -52,7 +69,8 @@ class ZoneFsBackend : public ZonedBlockDeviceBackend {
   std::string ErrorToString(int err);
   uint64_t LBAToZoneOffset(uint64_t pos);
   std::string LBAToZoneFile(uint64_t start);
-  int OpenZoneFile(uint64_t start, int flags);
+  std::shared_ptr<ZoneFsFile> GetZoneFile(uint64_t start, int flags);
+  void PutZoneFile(uint64_t start, int flags);
 };
 
 }  // namespace ROCKSDB_NAMESPACE

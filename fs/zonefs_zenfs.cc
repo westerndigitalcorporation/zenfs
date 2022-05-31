@@ -30,7 +30,10 @@
 namespace ROCKSDB_NAMESPACE {
 
 ZoneFsBackend::ZoneFsBackend(std::string mountpoint)
-    : mountpoint_(mountpoint), readonly_(false) {}
+    : mountpoint_(mountpoint),
+      readonly_(false),
+      rd_fd_(0, nullptr),
+      direct_rd_fd_(0, nullptr) {}
 
 ZoneFsBackend::~ZoneFsBackend() {}
 
@@ -115,6 +118,7 @@ IOStatus ZoneFsBackend::Reset(uint64_t start, bool *offline,
   if (ret) {
     return IOStatus::IOError("Zone reset failed: " + ErrorToString(errno));
   }
+  PutZoneFile(start, O_WRONLY);
 
   if (stat(filename.c_str(), &file_stat) < 0) {
     return IOStatus::InvalidArgument(
@@ -141,16 +145,63 @@ IOStatus ZoneFsBackend::Finish(uint64_t start) {
   ret = truncate(filename.c_str(), zone_sz_);
   if (ret)
     return IOStatus::IOError("Zone finish failed: " + ErrorToString(errno));
+  PutZoneFile(start, O_WRONLY);
 
   return IOStatus::OK();
 }
 
-int ZoneFsBackend::OpenZoneFile(uint64_t start, int flags) {
-  std::string filename = LBAToZoneFile(start);
-  return open(filename.c_str(), flags);
+std::shared_ptr<ZoneFsFile> ZoneFsBackend::GetZoneFile(uint64_t start,
+                                                       int flags) {
+  uint64_t zone_nr = start / zone_sz_;
+
+  if (flags & O_WRONLY) {
+    std::lock_guard<std::mutex> map_lock(zone_wr_fds_mtx_);
+    std::map<uint64_t, std::shared_ptr<ZoneFsFile>>::iterator open_fd =
+        wr_fds_.find(zone_nr);
+
+    if (open_fd == wr_fds_.end()) {
+      std::string filename = LBAToZoneFile(start);
+      int fd = open(filename.c_str(), flags);
+      if (fd == -1) return nullptr;
+
+      wr_fds_[zone_nr] = std::make_shared<ZoneFsFile>(fd);
+      return wr_fds_[zone_nr];
+    } else {
+      return open_fd->second;
+    }
+  } else {
+    std::lock_guard<std::mutex> map_lock(zone_rd_fds_mtx_);
+    std::pair<uint64_t, std::shared_ptr<ZoneFsFile>> *fd_cache =
+        (flags & O_DIRECT) ? &direct_rd_fd_ : &rd_fd_;
+
+    if (fd_cache->second == nullptr || fd_cache->first != zone_nr) {
+      std::string filename = LBAToZoneFile(start);
+      int fd = open(filename.c_str(), flags);
+      if (fd == -1) return nullptr;
+
+      fd_cache->first = zone_nr;
+      fd_cache->second = std::make_shared<ZoneFsFile>(fd);
+    }
+    return fd_cache->second;
+  }
 }
 
-IOStatus ZoneFsBackend::Close(__attribute__((unused)) uint64_t start) {
+void ZoneFsBackend::PutZoneFile(uint64_t start, int flags) {
+  uint64_t zone_nr = start / zone_sz_;
+
+  if (flags & O_WRONLY) {
+    std::lock_guard<std::mutex> map_lock(zone_wr_fds_mtx_);
+    std::map<uint64_t, std::shared_ptr<ZoneFsFile>>::iterator open_fd =
+        wr_fds_.find(zone_nr);
+
+    if (open_fd != wr_fds_.end()) {
+      wr_fds_.erase(open_fd);
+    }
+  }
+}
+
+IOStatus ZoneFsBackend::Close(uint64_t start) {
+  PutZoneFile(start, O_WRONLY);
   return IOStatus::OK();
 }
 
@@ -160,11 +211,11 @@ int ZoneFsBackend::Read(char *buf, int size, uint64_t pos, bool direct) {
   int read_from_zone = std::min((uint64_t)size, zone_sz_ - offset);
   int read = 0;
 
-  int fd = OpenZoneFile(pos, flags);
-  if (fd == -1) return -1;
+  std::shared_ptr<ZoneFsFile> file = GetZoneFile(pos, flags);
+  if (file == nullptr) return -1;
 
   while (read_from_zone) {
-    int ret = pread(fd, buf, read_from_zone, offset);
+    int ret = pread(file->GetFd(), buf, read_from_zone, offset);
     if (ret > 0) {
       read_from_zone -= ret;
       buf += ret;
@@ -175,7 +226,6 @@ int ZoneFsBackend::Read(char *buf, int size, uint64_t pos, bool direct) {
       break;
     }
   }
-  close(fd);
 
   return read;
 }
@@ -187,22 +237,22 @@ int ZoneFsBackend::Write(char *data, uint32_t size, uint64_t pos) {
 
   if (readonly_) return -1;
 
-  int fd = OpenZoneFile(pos, O_WRONLY | O_DIRECT);
-  if (fd == -1) return -1;
+  std::shared_ptr<ZoneFsFile> file = GetZoneFile(pos, O_WRONLY | O_DIRECT);
+  if (file == nullptr) return -1;
 
   while (write_to_zone) {
-    int ret = pwrite(fd, data, write_to_zone, offset);
+    int ret = pwrite(file->GetFd(), data, write_to_zone, offset);
     if (ret > 0) {
       write_to_zone -= ret;
       data += ret;
       offset += ret;
       written += ret;
+      if (offset == zone_sz_) PutZoneFile(pos, O_WRONLY);
     } else {
       if (ret < 0) written = ret;
       break;
     }
   }
-  close(fd);
 
   return written;
 }
