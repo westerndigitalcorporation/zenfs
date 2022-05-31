@@ -11,13 +11,16 @@
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <mntent.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <cstdlib>
+#include <fstream>
 #include <string>
 
 #include "rocksdb/env.h"
@@ -26,6 +29,7 @@
 #define ZENFS_ZONEFS_ZONE_OFFLINE(_f_mode) \
   (((_f_mode) &                            \
     (S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR | S_IWGRP | S_IWOTH)) == 0)
+#define ZENFS_ZONEFS_DEFAULT_MAX_LIMIT 14
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -49,6 +53,42 @@ std::string ZoneFsBackend::LBAToZoneFile(uint64_t start) {
 
 uint64_t ZoneFsBackend::LBAToZoneOffset(uint64_t pos) {
   return pos - ((pos / zone_sz_) * zone_sz_);
+}
+
+std::string ZoneFsBackend::GetBackingDevice(const char *mountpoint) {
+  struct mntent *mnt = NULL;
+  FILE *file = NULL;
+
+  file = setmntent("/proc/mounts", "r");
+  if (file == NULL) return "";
+
+  while ((mnt = getmntent(file)) != NULL) {
+    if (!strcmp(mnt->mnt_dir, mountpoint)) {
+      std::string dev_name(mnt->mnt_fsname);
+      std::size_t pos = dev_name.rfind("/");
+      if (pos != std::string::npos) {
+        dev_name.replace(0, pos + 1, "");
+        return dev_name;
+      }
+    }
+  }
+  endmntent(file);
+
+  return "";
+}
+
+unsigned int ZoneFsBackend::GetSysFsValue(std::string dev_name,
+                                          std::string field) {
+  std::ifstream sysfs;
+  unsigned int val = ZENFS_ZONEFS_DEFAULT_MAX_LIMIT;
+
+  sysfs.open("/sys/fs/zonefs/" + dev_name + "/" + field, std::ifstream::in);
+  if (sysfs.is_open()) {
+    sysfs >> val;
+    sysfs.close();
+  }
+
+  return val;
 }
 
 IOStatus ZoneFsBackend::Open(bool readonly,
@@ -76,11 +116,20 @@ IOStatus ZoneFsBackend::Open(bool readonly,
   zone_sz_ = zonefs_stat.st_blocks * 512;
   block_sz_ = zonefs_stat.st_blksize;
 
+  std::string backing_dev =
+      ZoneFsBackend::GetBackingDevice(mountpoint_.c_str());
+  if (backing_dev.length()) {
+    *max_active_zones =
+        ZoneFsBackend::GetSysFsValue(backing_dev, "max_active_seq_files");
+    *max_open_zones =
+        ZoneFsBackend::GetSysFsValue(backing_dev, "max_wro_seq_files");
+  } else {
+    *max_active_zones = *max_open_zones = ZENFS_ZONEFS_DEFAULT_MAX_LIMIT;
+  }
+
   *block_size = block_sz_;
   *zone_size = zone_sz_;
   *nr_zones = nr_zones_;
-  *max_active_zones = 8;  // TODO: read from sysfs
-  *max_open_zones = 8;    // TODO: read from sysfs
 
   readonly_ = readonly;
 

@@ -69,6 +69,8 @@ class ZoneFsBackend : public ZonedBlockDeviceBackend {
   std::string ErrorToString(int err);
   uint64_t LBAToZoneOffset(uint64_t pos);
   std::string LBAToZoneFile(uint64_t start);
+  std::string GetBackingDevice(const char *mountpoint);
+  unsigned int GetSysFsValue(std::string dev_name, std::string field);
   std::shared_ptr<ZoneFsFile> GetZoneFile(uint64_t start, int flags);
   void PutZoneFile(uint64_t start, int flags);
 };
