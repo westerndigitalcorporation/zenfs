@@ -1,6 +1,12 @@
 #!/bin/bash
 source smoke/common.sh
 
+if [ "x${PLUGIN_HOST}" = "xterarkdb" ]
+then
+    echo "Running with terarkdb: Skipping db_stress test"
+    exit 0
+fi
+
 OPS_PER_THREAD=1000
 REOPENS=5
 
