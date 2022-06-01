@@ -12,34 +12,73 @@ jobs:
     steps:
       - name: Clean
         run: rm -rf ${GITHUB_WORKSPACE}/*
+
       - name: Checkout build scripts
         run: git clone ~/harness.git
-      - name: Checkout zbdbench
+
+      - name: Checkout zbdbench for RocksDB
         uses: actions/checkout@v2
         with:
           repository: westerndigitalcorporation/zbdbench
           ref: v0.1.1
           path: harness/rocksdb-context/zbdbench
+
       - name: Checkout rocksdb
         uses: actions/checkout@v2
         with:
           repository: facebook/rocksdb
           ref: v7.0.2
           path: harness/rocksdb-context/rocksdb
-      - name: Checkout zenfs
+
+      - name: Checkout zbdbench for TerarkDB
+        uses: actions/checkout@v2
+        with:
+          repository: westerndigitalcorporation/zbdbench
+          ref: v0.1.1
+          path: harness/terarkdb-context/zbdbench
+
+      - name: Checkout TerarkDB
+        uses: actions/checkout@v2
+        with:
+          repository: bytedance/terarkdb
+          ref: dev.1.4
+          path: harness/terarkdb-context/terarkdb
+          submodules: recursive
+
+      - name: Checkout zenfs for RocksDB
         uses: actions/checkout@v2
         with:
           fetch-depth: 0
           path: harness/rocksdb-context/rocksdb/plugin/zenfs
-      - name: Build docker image
-        run: cd harness && st -o logs/make-smoke -- make NO_VAGRANT=1 V=1 rocksdb-docker-image 
-      - name: Run smoke tests
-        run: cd harness && st --silent -o logs/make-smoke -- disk-select --disk 1TB -- make NO_VAGRANT=1 results/zenfs-smoke.xml 
+
+      - name: Remove zenfs TerarkDB submodule
+        run: rm -rf harness/terarkdb-context/terarkdb/third-party/zenfs
+
+      - name: Checkout zenfs for TerarkDB
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+          path: harness/terarkdb-context/terarkdb/third-party/zenfs
+
+      - name: Build RocksDB docker image
+        run: cd harness && st -o logs/make-rocksdb-image-$(uuidgen) -- make NO_VAGRANT=1 V=1 rocksdb-docker-image 
+
+      - name: Build TerarkDB docker image
+        run: cd harness && st -o logs/make-terarkdb-image-$(uuidgen) -- make NO_VAGRANT=1 V=1 IMAGE=terarkdb terarkdb-docker-image 
+
+      - name: Run smoke tests for RocksDB
+        run: cd harness && st --silent -o logs/make-rocksdb-smoke-$(uuidgen) -- disk-select --disk 1TB -- make NO_VAGRANT=1 results/zenfs-smoke.xml 
+
+      - name: Run smoke tests for TerarkDB
+        run: cd harness && st --silent -o logs/make-tetarkdb-smoke-$(uuidgen) -- disk-select --disk 1TB -- make NO_VAGRANT=1 IMAGE=terarkdb results/zenfs-smoke.xml 
+
       - name: Run utils tests
         run: cd harness && st --silent -o logs/make-utils -- disk-select --disk 1TB -- make NO_VAGRANT=1 results/zenfs-utils.xml 
+
       - name: Collect Results
         run: cd harness && make NO_VAGRANT=1 upload 
         if: always()
+
       - name: Remove images
         run: podman rmi --force --all
         if: always()
