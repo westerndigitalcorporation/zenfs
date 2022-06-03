@@ -1621,12 +1621,18 @@ void ZenFS::GetZenFSSnapshot(ZenFSSnapshot& snapshot,
     std::lock_guard<std::mutex> file_lock(files_mtx_);
     for (const auto& file_it : files_) {
       ZoneFile& file = *(file_it.second);
+
+      /* Skip files open for writing, as extents are being updated */
+      if (!file.TryAcquireWRLock()) continue;
+
       // file -> extents mapping
       snapshot.zone_files_.emplace_back(file);
       // extent -> file mapping
       for (auto* ext : file.GetExtents()) {
         snapshot.extents_.emplace_back(*ext, file.GetFilename());
       }
+
+      file.ReleaseWRLock();
     }
   }
 
