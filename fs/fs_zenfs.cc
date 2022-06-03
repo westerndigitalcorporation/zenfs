@@ -503,9 +503,6 @@ IOStatus ZenFS::DeleteFileNoLock(std::string fname, const IOOptions& options,
   if (zoneFile != nullptr) {
     std::string record;
 
-    if (zoneFile->IsOpenForWR())
-      return IOStatus::Busy("ZenFS::DeleteFileNoLock(): file open for writing:",
-                            fname.c_str());
     files_.erase(fname);
     s = zoneFile->RemoveLinkName(fname);
     if (!s.ok()) return s;
