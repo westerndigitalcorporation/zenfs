@@ -32,16 +32,31 @@
 namespace ROCKSDB_NAMESPACE {
 
 class ZonedBlockDevice;
+class ZonedBlockDeviceBackend;
 class ZoneSnapshot;
 class ZenFSSnapshotOptions;
 
+class ZoneList {
+ private:
+  void *data_;
+  unsigned int zone_count_;
+
+ public:
+  ZoneList(void *data, unsigned int zone_count)
+      : data_(data), zone_count_(zone_count){};
+  void *GetData() { return data_; };
+  unsigned int ZoneCount() { return zone_count_; };
+  ~ZoneList() { free(data_); };
+};
+
 class Zone {
   ZonedBlockDevice *zbd_;
+  ZonedBlockDeviceBackend *zbd_be_;
   std::atomic_bool busy_;
 
  public:
-  explicit Zone(ZonedBlockDevice *zbd, uint64_t start, uint64_t max_capacity,
-                uint64_t wp, bool writable);
+  explicit Zone(ZonedBlockDevice *zbd, ZonedBlockDeviceBackend *zbd_be,
+                std::unique_ptr<ZoneList> &zones, unsigned int idx);
 
   uint64_t start_;
   uint64_t capacity_; /* remaining capacity */
@@ -77,23 +92,18 @@ class Zone {
   inline IOStatus CheckRelease();
 };
 
-class ZoneList {
- private:
-  void *data_;
-  unsigned int zone_count_;
-
- public:
-  ZoneList(void *data, unsigned int zone_count)
-      : data_(data), zone_count_(zone_count){};
-  void *GetData() { return data_; };
-  unsigned int ZoneCount() { return zone_count_; };
-  ~ZoneList() { free(data_); };
-};
-
 class ZonedBlockDeviceBackend {
  public:
-  virtual std::unique_ptr<ZoneList> ListZones(int fd,
-                                              uint64_t addr_space_sz) = 0;
+  uint32_t block_sz_ = 0;
+  uint64_t zone_sz_ = 0;
+  uint32_t nr_zones_ = 0;
+
+ public:
+  virtual IOStatus Open(bool readonly, bool exclusive, uint32_t *block_size,
+                        uint64_t *zone_size, uint32_t *nr_zones,
+                        unsigned int *max_active_zones,
+                        unsigned int *max_open_zones) = 0;
+  virtual std::unique_ptr<ZoneList> ListZones() = 0;
   virtual bool ZoneIsSwr(std::unique_ptr<ZoneList> &zones,
                          unsigned int idx) = 0;
   virtual bool ZoneIsOffline(std::unique_ptr<ZoneList> &zones,
@@ -111,6 +121,10 @@ class ZonedBlockDeviceBackend {
   virtual uint64_t ZoneWp(std::unique_ptr<ZoneList> &zones,
                           unsigned int idx) = 0;
   virtual ~ZonedBlockDeviceBackend() = 0;
+
+  virtual int GetReadFD() = 0;
+  virtual int GetReadDirectFD() = 0;
+  virtual int GetWriteFD() = 0;
 };
 
 class ZonedBlockDevice {
@@ -122,9 +136,6 @@ class ZonedBlockDevice {
   uint32_t nr_zones_;
   std::vector<Zone *> io_zones;
   std::vector<Zone *> meta_zones;
-  int read_f_;
-  int read_direct_f_;
-  int write_f_;
   time_t start_time_;
   std::shared_ptr<Logger> logger_;
   uint32_t finish_threshold_ = 0;
@@ -180,10 +191,6 @@ class ZonedBlockDevice {
   void LogZoneUsage();
   void LogGarbageInfo();
 
-  int GetReadFD() { return read_f_; }
-  int GetReadDirectFD() { return read_direct_f_; }
-  int GetWriteFD() { return write_f_; }
-
   uint64_t GetZoneSize() { return zone_sz_; }
   uint32_t GetNrZones() { return nr_zones_; }
   std::vector<Zone *> GetMetaZones() { return meta_zones; }
@@ -216,7 +223,6 @@ class ZonedBlockDevice {
   uint64_t GetTotalBytesWritten() { return bytes_written_.load(); };
 
  private:
-  std::string ErrorToString(int err);
   IOStatus GetZoneDeferredStatus();
   bool GetActiveIOZoneTokenIfAvailable();
   void WaitForOpenIOZoneToken(bool prioritized);
