@@ -8,6 +8,7 @@ jobs:
     runs-on: self-hosted
     name: Smoke Nightly ${{ matrix.rocksdb-ref }}
     strategy:
+      fail-fast: false
       matrix:
         rocksdb-ref:
           - main
