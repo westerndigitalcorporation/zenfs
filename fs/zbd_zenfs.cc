@@ -49,11 +49,24 @@ namespace ROCKSDB_NAMESPACE {
 ZonedBlockDeviceBackend::~ZonedBlockDeviceBackend() {}
 
 class ZbdlibBackend : public ZonedBlockDeviceBackend {
- public:
-  explicit ZbdlibBackend() {}
-  ~ZbdlibBackend() {}
+ private:
+  std::string filename_;
+  int read_f_;
+  int read_direct_f_;
+  int write_f_;
 
-  std::unique_ptr<ZoneList> ListZones(int fd, uint64_t addr_space_sz);
+ public:
+  explicit ZbdlibBackend(std::string bdevname);
+  ~ZbdlibBackend() {
+    zbd_close(read_f_);
+    zbd_close(read_direct_f_);
+    zbd_close(write_f_);
+  }
+
+  IOStatus Open(bool readonly, bool exclusive, uint32_t *block_size,
+                uint64_t *zone_size, uint32_t *nr_zones,
+                unsigned int *max_active_zones, unsigned int *max_open_zones);
+  std::unique_ptr<ZoneList> ListZones();
 
   bool ZoneIsSwr(std::unique_ptr<ZoneList> &zones, unsigned int idx) {
     struct zbd_zone *z = &((struct zbd_zone *)zones->GetData())[idx];
@@ -94,15 +107,81 @@ class ZbdlibBackend : public ZonedBlockDeviceBackend {
     struct zbd_zone *z = &((struct zbd_zone *)zones->GetData())[idx];
     return zbd_zone_wp(z);
   };
+
+  int GetReadFD() { return read_f_; }
+  int GetReadDirectFD() { return read_direct_f_; }
+  int GetWriteFD() { return write_f_; }
+
+ private:
+  std::string ErrorToString(int err);
 };
 
-std::unique_ptr<ZoneList> ZbdlibBackend::ListZones(int fd,
-                                                   uint64_t addr_space_sz) {
+ZbdlibBackend::ZbdlibBackend(std::string bdevname)
+    : filename_("/dev/" + bdevname),
+      read_f_(-1),
+      read_direct_f_(-1),
+      write_f_(-1) {}
+
+std::string ZbdlibBackend::ErrorToString(int err) {
+  char *err_str = strerror(err);
+  if (err_str != nullptr) return std::string(err_str);
+  return "";
+}
+
+IOStatus ZbdlibBackend::Open(bool readonly, bool exclusive,
+                             uint32_t *block_size, uint64_t *zone_size,
+                             uint32_t *nr_zones, unsigned int *max_active_zones,
+                             unsigned int *max_open_zones) {
+  zbd_info info;
+
+  /* The non-direct file descriptor acts as an exclusive-use semaphore */
+  if (exclusive) {
+    read_f_ = zbd_open(filename_.c_str(), O_RDONLY | O_EXCL, &info);
+  } else {
+    read_f_ = zbd_open(filename_.c_str(), O_RDONLY, &info);
+  }
+
+  if (read_f_ < 0) {
+    return IOStatus::InvalidArgument(
+        "Failed to open zoned block device for read: " + ErrorToString(errno));
+  }
+
+  read_direct_f_ = zbd_open(filename_.c_str(), O_RDONLY | O_DIRECT, &info);
+  if (read_direct_f_ < 0) {
+    return IOStatus::InvalidArgument(
+        "Failed to open zoned block device for direct read: " +
+        ErrorToString(errno));
+  }
+
+  if (readonly) {
+    write_f_ = -1;
+  } else {
+    write_f_ = zbd_open(filename_.c_str(), O_WRONLY | O_DIRECT, &info);
+    if (write_f_ < 0) {
+      return IOStatus::InvalidArgument(
+          "Failed to open zoned block device for write: " +
+          ErrorToString(errno));
+    }
+  }
+
+  if (info.model != ZBD_DM_HOST_MANAGED) {
+    return IOStatus::NotSupported("Not a host managed block device");
+  }
+
+  *block_size = block_sz_ = info.pblock_size;
+  *zone_size = zone_sz_ = info.zone_size;
+  *nr_zones = nr_zones_ = info.nr_zones;
+  *max_active_zones = info.max_nr_active_zones;
+  *max_open_zones = info.max_nr_open_zones;
+  return IOStatus::OK();
+}
+
+std::unique_ptr<ZoneList> ZbdlibBackend::ListZones() {
   int ret;
   void *zones;
   unsigned int nr_zones;
 
-  ret = zbd_list_zones(fd, 0, addr_space_sz, ZBD_RO_ALL,
+  ret = zbd_list_zones(read_f_, 0, zone_sz_ * nr_zones_, ZBD_RO_ALL,
                        (struct zbd_zone **)&zones, &nr_zones);
   if (ret) {
     return nullptr;
@@ -113,17 +192,19 @@ std::unique_ptr<ZoneList> ZbdlibBackend::ListZones(int fd,
   return zl;
 }
 
-Zone::Zone(ZonedBlockDevice *zbd, uint64_t start, uint64_t max_capacity,
-           uint64_t wp, bool writable)
+Zone::Zone(ZonedBlockDevice *zbd, ZonedBlockDeviceBackend *zbd_be,
+           std::unique_ptr<ZoneList> &zones, unsigned int idx)
     : zbd_(zbd),
+      zbd_be_(zbd_be),
       busy_(false),
-      start_(start),
-      max_capacity_(max_capacity),
-      wp_(wp) {
+      start_(zbd_be->ZoneStart(zones, idx)),
+      max_capacity_(zbd_be->ZoneMaxCapacity(zones, idx)),
+      wp_(zbd_be->ZoneWp(zones, idx)) {
   lifetime_ = Env::WLTH_NOT_SET;
   used_capacity_ = 0;
   capacity_ = 0;
-  if (writable) capacity_ = max_capacity - (wp - start);
+  if (zbd_be->ZoneIsWritable(zones, idx))
+    capacity_ = max_capacity_ - (wp_ - start_);
 }
 
 bool Zone::IsUsed() { return (used_capacity_ > 0); }
@@ -152,10 +233,10 @@ IOStatus Zone::Reset() {
   assert(!IsUsed());
   assert(IsBusy());
 
-  ret = zbd_reset_zones(zbd_->GetWriteFD(), start_, zone_sz);
+  ret = zbd_reset_zones(zbd_be_->GetWriteFD(), start_, zone_sz);
   if (ret) return IOStatus::IOError("Zone reset failed\n");
 
-  ret = zbd_report_zones(zbd_->GetReadFD(), start_, zone_sz, ZBD_RO_ALL, &z,
+  ret = zbd_report_zones(zbd_be_->GetReadFD(), start_, zone_sz, ZBD_RO_ALL, &z,
                          &report);
 
   if (ret || (report != 1)) return IOStatus::IOError("Zone report failed\n");
@@ -173,7 +254,7 @@ IOStatus Zone::Reset() {
 
 IOStatus Zone::Finish() {
   size_t zone_sz = zbd_->GetZoneSize();
-  int fd = zbd_->GetWriteFD();
+  int fd = zbd_be_->GetWriteFD();
   int ret;
 
   assert(IsBusy());
@@ -189,7 +270,7 @@ IOStatus Zone::Finish() {
 
 IOStatus Zone::Close() {
   size_t zone_sz = zbd_->GetZoneSize();
-  int fd = zbd_->GetWriteFD();
+  int fd = zbd_be_->GetWriteFD();
   int ret;
 
   assert(IsBusy());
@@ -208,7 +289,7 @@ IOStatus Zone::Append(char *data, uint32_t size) {
   zbd_->GetMetrics()->ReportThroughput(ZENFS_ZONE_WRITE_THROUGHPUT, size);
   char *ptr = data;
   uint32_t left = size;
-  int fd = zbd_->GetWriteFD();
+  int fd = zbd_be_->GetWriteFD();
   int ret;
 
   if (capacity_ < size)
@@ -251,20 +332,9 @@ Zone *ZonedBlockDevice::GetIOZone(uint64_t offset) {
 ZonedBlockDevice::ZonedBlockDevice(std::string bdevname,
                                    std::shared_ptr<Logger> logger,
                                    std::shared_ptr<ZenFSMetrics> metrics)
-    : filename_("/dev/" + bdevname),
-      read_f_(-1),
-      read_direct_f_(-1),
-      write_f_(-1),
-      logger_(logger),
-      metrics_(metrics) {
-  zbd_be_ = std::make_unique<ZbdlibBackend>();
+    : filename_("/dev/" + bdevname), logger_(logger), metrics_(metrics) {
+  zbd_be_ = std::make_unique<ZbdlibBackend>(bdevname);
   Info(logger_, "New Zoned Block Device: %s", filename_.c_str());
-}
-
-std::string ZonedBlockDevice::ErrorToString(int err) {
-  char *err_str = strerror(err);
-  if (err_str != nullptr) return std::string(err_str);
-  return "";
 }
 
 IOStatus ZonedBlockDevice::CheckScheduler() {
@@ -293,8 +363,8 @@ IOStatus ZonedBlockDevice::CheckScheduler() {
 
 IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   std::unique_ptr<ZoneList> zone_rep;
-  uint64_t addr_space_sz;
-  zbd_info info;
+  unsigned int max_nr_active_zones;
+  unsigned int max_nr_open_zones;
   Status s;
   uint64_t i = 0;
   uint64_t m = 0;
@@ -304,68 +374,34 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   if (!readonly && !exclusive)
     return IOStatus::InvalidArgument("Write opens must be exclusive");
 
-  /* The non-direct file descriptor acts as an exclusive-use semaphore */
-  if (exclusive) {
-    read_f_ = zbd_open(filename_.c_str(), O_RDONLY | O_EXCL, &info);
-  } else {
-    read_f_ = zbd_open(filename_.c_str(), O_RDONLY, &info);
-  }
-
-  if (read_f_ < 0) {
-    return IOStatus::InvalidArgument(
-        "Failed to open zoned block device for read: " + ErrorToString(errno));
-  }
-
-  read_direct_f_ = zbd_open(filename_.c_str(), O_RDONLY | O_DIRECT, &info);
-  if (read_direct_f_ < 0) {
-    return IOStatus::InvalidArgument(
-        "Failed to open zoned block device for direct read: " +
-        ErrorToString(errno));
-  }
-
-  if (readonly) {
-    write_f_ = -1;
-  } else {
-    write_f_ = zbd_open(filename_.c_str(), O_WRONLY | O_DIRECT, &info);
-    if (write_f_ < 0) {
-      return IOStatus::InvalidArgument(
-          "Failed to open zoned block device for write: " +
-          ErrorToString(errno));
-    }
-  }
-
-  if (info.model != ZBD_DM_HOST_MANAGED) {
-    return IOStatus::NotSupported("Not a host managed block device");
-  }
-
-  if (info.nr_zones < ZENFS_MIN_ZONES) {
-    return IOStatus::NotSupported(
-        "To few zones on zoned block device (32 required)");
-  }
-
-  IOStatus ios = CheckScheduler();
+  IOStatus ios =
+      zbd_be_->Open(readonly, exclusive, &block_sz_, &zone_sz_, &nr_zones_,
+                    &max_nr_active_zones, &max_nr_open_zones);
   if (ios != IOStatus::OK()) return ios;
 
-  block_sz_ = info.pblock_size;
-  zone_sz_ = info.zone_size;
-  nr_zones_ = info.nr_zones;
+  if (nr_zones_ < ZENFS_MIN_ZONES) {
+    return IOStatus::NotSupported("To few zones on zoned block device (" +
+                                  std::to_string(ZENFS_MIN_ZONES) +
+                                  " required)");
+  }
 
-  if (info.max_nr_active_zones == 0)
-    max_nr_active_io_zones_ = info.nr_zones;
-  else
-    max_nr_active_io_zones_ = info.max_nr_active_zones - reserved_zones;
+  ios = CheckScheduler();
+  if (ios != IOStatus::OK()) return ios;
 
-  if (info.max_nr_open_zones == 0)
-    max_nr_open_io_zones_ = info.nr_zones;
+  if (max_nr_active_zones == 0)
+    max_nr_active_io_zones_ = nr_zones_;
   else
-    max_nr_open_io_zones_ = info.max_nr_open_zones - reserved_zones;
+    max_nr_active_io_zones_ = max_nr_active_zones - reserved_zones;
+
+  if (max_nr_open_zones == 0)
+    max_nr_open_io_zones_ = nr_zones_;
+  else
+    max_nr_open_io_zones_ = max_nr_open_zones - reserved_zones;
 
   Info(logger_, "Zone block device nr zones: %u max active: %u max open: %u \n",
-       info.nr_zones, info.max_nr_active_zones, info.max_nr_open_zones);
+       nr_zones_, max_nr_active_zones, max_nr_open_zones);
 
-  addr_space_sz = (uint64_t)nr_zones_ * zone_sz_;
-
-  zone_rep = zbd_be_->ListZones(read_f_, addr_space_sz);
+  zone_rep = zbd_be_->ListZones();
   if (zone_rep == nullptr || zone_rep->ZoneCount() != nr_zones_) {
     Error(logger_, "Failed to list zones");
     return IOStatus::IOError("Failed to list zones");
@@ -375,10 +411,7 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
     /* Only use sequential write required zones */
     if (zbd_be_->ZoneIsSwr(zone_rep, i)) {
       if (!zbd_be_->ZoneIsOffline(zone_rep, i)) {
-        meta_zones.push_back(new Zone(this, zbd_be_->ZoneStart(zone_rep, i),
-                                      zbd_be_->ZoneMaxCapacity(zone_rep, i),
-                                      zbd_be_->ZoneWp(zone_rep, i),
-                                      zbd_be_->ZoneIsWritable(zone_rep, i)));
+        meta_zones.push_back(new Zone(this, zbd_be_.get(), zone_rep, i));
       }
       m++;
     }
@@ -392,10 +425,7 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
     /* Only use sequential write required zones */
     if (zbd_be_->ZoneIsSwr(zone_rep, i)) {
       if (!zbd_be_->ZoneIsOffline(zone_rep, i)) {
-        Zone *newZone = new Zone(this, zbd_be_->ZoneStart(zone_rep, i),
-                                 zbd_be_->ZoneMaxCapacity(zone_rep, i),
-                                 zbd_be_->ZoneWp(zone_rep, i),
-                                 zbd_be_->ZoneIsWritable(zone_rep, i));
+        Zone *newZone = new Zone(this, zbd_be_.get(), zone_rep, i);
         if (!newZone->Acquire()) {
           assert(false);
           return IOStatus::Corruption("Failed to set busy flag of zone " +
@@ -534,10 +564,6 @@ ZonedBlockDevice::~ZonedBlockDevice() {
   for (const auto z : io_zones) {
     delete z;
   }
-
-  zbd_close(read_f_);
-  zbd_close(read_direct_f_);
-  zbd_close(write_f_);
 }
 
 #define LIFETIME_DIFF_NOT_GOOD (100)
@@ -801,8 +827,8 @@ int ZonedBlockDevice::Read(char *buf, uint64_t offset, int n, bool direct) {
   int ret = 0;
   int left = n;
   int r = -1;
-  int f_direct = GetReadDirectFD();
-  int f = GetReadFD();
+  int f_direct = zbd_be_->GetReadDirectFD();
+  int f = zbd_be_->GetReadFD();
 
   while (left) {
     if (direct)
