@@ -113,6 +113,7 @@ class ZbdlibBackend : public ZonedBlockDeviceBackend {
   int GetWriteFD() { return write_f_; }
 
  private:
+  IOStatus CheckScheduler();
   std::string ErrorToString(int err);
 };
 
@@ -126,6 +127,30 @@ std::string ZbdlibBackend::ErrorToString(int err) {
   char *err_str = strerror(err);
   if (err_str != nullptr) return std::string(err_str);
   return "";
+}
+
+IOStatus ZbdlibBackend::CheckScheduler() {
+  std::ostringstream path;
+  std::string s = filename_;
+  std::fstream f;
+
+  s.erase(0, 5);  // Remove "/dev/" from /dev/nvmeXnY
+  path << "/sys/block/" << s << "/queue/scheduler";
+  f.open(path.str(), std::fstream::in);
+  if (!f.is_open()) {
+    return IOStatus::InvalidArgument("Failed to open " + path.str());
+  }
+
+  std::string buf;
+  getline(f, buf);
+  if (buf.find("[mq-deadline]") == std::string::npos) {
+    f.close();
+    return IOStatus::InvalidArgument(
+        "Current ZBD scheduler is not mq-deadline, set it to mq-deadline.");
+  }
+
+  f.close();
+  return IOStatus::OK();
 }
 
 IOStatus ZbdlibBackend::Open(bool readonly, bool exclusive,
@@ -167,6 +192,9 @@ IOStatus ZbdlibBackend::Open(bool readonly, bool exclusive,
   if (info.model != ZBD_DM_HOST_MANAGED) {
     return IOStatus::NotSupported("Not a host managed block device");
   }
+
+  IOStatus ios = CheckScheduler();
+  if (ios != IOStatus::OK()) return ios;
 
   *block_size = block_sz_ = info.pblock_size;
   *zone_size = zone_sz_ = info.zone_size;
@@ -337,30 +365,6 @@ ZonedBlockDevice::ZonedBlockDevice(std::string bdevname,
   Info(logger_, "New Zoned Block Device: %s", filename_.c_str());
 }
 
-IOStatus ZonedBlockDevice::CheckScheduler() {
-  std::ostringstream path;
-  std::string s = filename_;
-  std::fstream f;
-
-  s.erase(0, 5);  // Remove "/dev/" from /dev/nvmeXnY
-  path << "/sys/block/" << s << "/queue/scheduler";
-  f.open(path.str(), std::fstream::in);
-  if (!f.is_open()) {
-    return IOStatus::InvalidArgument("Failed to open " + path.str());
-  }
-
-  std::string buf;
-  getline(f, buf);
-  if (buf.find("[mq-deadline]") == std::string::npos) {
-    f.close();
-    return IOStatus::InvalidArgument(
-        "Current ZBD scheduler is not mq-deadline, set it to mq-deadline.");
-  }
-
-  f.close();
-  return IOStatus::OK();
-}
-
 IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   std::unique_ptr<ZoneList> zone_rep;
   unsigned int max_nr_active_zones;
@@ -384,9 +388,6 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
                                   std::to_string(ZENFS_MIN_ZONES) +
                                   " required)");
   }
-
-  ios = CheckScheduler();
-  if (ios != IOStatus::OK()) return ios;
 
   if (max_nr_active_zones == 0)
     max_nr_active_io_zones_ = nr_zones_;

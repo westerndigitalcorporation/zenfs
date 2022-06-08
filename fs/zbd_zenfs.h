@@ -171,7 +171,6 @@ class ZonedBlockDevice {
   virtual ~ZonedBlockDevice();
 
   IOStatus Open(bool readonly, bool exclusive);
-  IOStatus CheckScheduler();
 
   Zone *GetIOZone(uint64_t offset);
 
