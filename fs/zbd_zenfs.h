@@ -127,13 +127,13 @@ class ZonedBlockDeviceBackend {
                                    unsigned int idx) = 0;
   virtual uint64_t ZoneWp(std::unique_ptr<ZoneList> &zones,
                           unsigned int idx) = 0;
+  virtual std::string GetFilename() = 0;
   virtual ~ZonedBlockDeviceBackend() = 0;
 };
 
 class ZonedBlockDevice {
  private:
   std::unique_ptr<ZonedBlockDeviceBackend> zbd_be_;
-  std::string filename_;
   uint32_t block_sz_;
   uint64_t zone_sz_;
   uint32_t nr_zones_;

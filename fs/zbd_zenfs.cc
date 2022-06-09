@@ -113,6 +113,8 @@ class ZbdlibBackend : public ZonedBlockDeviceBackend {
     return zbd_zone_wp(z);
   };
 
+  std::string GetFilename() { return filename_; }
+
  private:
   IOStatus CheckScheduler();
   std::string ErrorToString(int err);
@@ -395,9 +397,9 @@ Zone *ZonedBlockDevice::GetIOZone(uint64_t offset) {
 ZonedBlockDevice::ZonedBlockDevice(std::string bdevname,
                                    std::shared_ptr<Logger> logger,
                                    std::shared_ptr<ZenFSMetrics> metrics)
-    : filename_("/dev/" + bdevname), logger_(logger), metrics_(metrics) {
+    : logger_(logger), metrics_(metrics) {
   zbd_be_ = std::make_unique<ZbdlibBackend>(bdevname);
-  Info(logger_, "New Zoned Block Device: %s", filename_.c_str());
+  Info(logger_, "New Zoned Block Device: %s", zbd_be_->GetFilename().c_str());
 }
 
 IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
@@ -1033,7 +1035,7 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
   return IOStatus::OK();
 }
 
-std::string ZonedBlockDevice::GetFilename() { return filename_; }
+std::string ZonedBlockDevice::GetFilename() { return zbd_be_->GetFilename(); }
 
 uint32_t ZonedBlockDevice::GetBlockSize() { return block_sz_; }
 
