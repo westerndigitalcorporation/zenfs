@@ -12,6 +12,7 @@ zenfs_HEADERS = \
 	fs/metrics.h \
 	fs/snapshot.h \
 	fs/filesystem_utility.h \
+	fs/filesystem.h \
 	fs/util.h
 
 zenfs_LDFLAGS = -u zenfs_filesystem_reg

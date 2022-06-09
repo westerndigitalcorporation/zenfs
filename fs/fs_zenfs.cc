@@ -235,9 +235,9 @@ IOStatus ZenMetaLog::ReadRecord(Slice* record, std::string* scratch) {
   return IOStatus::OK();
 }
 
-ZenFS::ZenFS(ZonedBlockDevice* zbd, std::shared_ptr<FileSystem> aux_fs,
-             std::shared_ptr<Logger> logger)
-    : FileSystemWrapper(aux_fs), zbd_(zbd), logger_(logger) {
+ZenFS::ZenFS(std::unique_ptr<ZonedBlockDevice> zbd,
+             std::shared_ptr<FileSystem> aux_fs, std::shared_ptr<Logger> logger)
+    : FileSystemWrapper(aux_fs), zbd_(zbd.release()), logger_(logger) {
   Info(logger_, "ZenFS initializing");
   Info(logger_, "ZenFS parameters: block device: %s, aux filesystem: %s",
        zbd_->GetFilename().c_str(), target()->Name());
@@ -271,9 +271,8 @@ IOStatus ZenFS::Repair() {
   return IOStatus::OK();
 }
 
-std::string ZenFS::FormatPathLexically(fs::path filepath) {
-  fs::path ret = fs::path("/") / filepath.lexically_normal();
-  return ret.string();
+fs::path FormatPathLexically(fs::path filepath) {
+  return fs::path("/") / filepath.lexically_normal();
 }
 
 void ZenFS::LogFiles() {
@@ -1422,14 +1421,15 @@ Status ZenFS::Mount(bool readonly) {
   return Status::OK();
 }
 
-Status ZenFS::MkFS(std::string aux_fs_p, uint32_t finish_threshold) {
+Status ZenFS::MkFS(fs::path const& aux_fs_path,
+                   uint32_t finish_threshold) {
   std::vector<Zone*> metazones = zbd_->GetMetaZones();
   std::unique_ptr<ZenMetaLog> log;
   Zone* meta_zone = nullptr;
-  std::string aux_fs_path = FormatPathLexically(aux_fs_p);
+  fs::path aux_fs_path_normal = FormatPathLexically(aux_fs_path);
   IOStatus s;
 
-  if (aux_fs_path.length() > 255) {
+  if (aux_fs_path_normal.string().length() > 255) {
     return Status::InvalidArgument(
         "Aux filesystem path must be less than 256 bytes\n");
   }
@@ -1467,7 +1467,7 @@ Status ZenFS::MkFS(std::string aux_fs_p, uint32_t finish_threshold) {
 
   log.reset(new ZenMetaLog(zbd_, meta_zone));
 
-  Superblock super(zbd_, aux_fs_path, finish_threshold);
+  Superblock super(zbd_, aux_fs_path_normal, finish_threshold);
   std::string super_string;
   super.EncodeTo(&super_string);
 
@@ -1533,7 +1533,8 @@ Status NewZenFS(FileSystem** fs, const std::string& bdevname,
   }
 #endif
 
-  ZonedBlockDevice* zbd = new ZonedBlockDevice(bdevname, logger, metrics);
+  std::unique_ptr<ZonedBlockDevice> zbd{
+      new ZonedBlockDevice(bdevname, logger, metrics)};
   IOStatus zbd_status = zbd->Open(false, true);
   if (!zbd_status.ok()) {
     Error(logger, "mkfs: Failed to open zoned block device: %s",
@@ -1541,7 +1542,7 @@ Status NewZenFS(FileSystem** fs, const std::string& bdevname,
     return Status::IOError(zbd_status.ToString());
   }
 
-  ZenFS* zenFS = new ZenFS(zbd, FileSystem::Default(), logger);
+  ZenFS* zenFS = new ZenFS(std::move(zbd), FileSystem::Default(), logger);
   s = zenFS->Mount(false);
   if (!s.ok()) {
     delete zenFS;

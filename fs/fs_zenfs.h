@@ -6,21 +6,13 @@
 
 #pragma once
 
-#if __cplusplus < 201703L
-#include "filesystem_utility.h"
-namespace fs = filesystem_utility;
-#else
-#include <filesystem>
-namespace fs = std::filesystem;
-#endif
-
 #include <memory>
 
+#include "filesystem.h"
 #include "io_zenfs.h"
 #include "metrics.h"
 #include "rocksdb/env.h"
 #include "rocksdb/file_system.h"
-#include "rocksdb/status.h"
 #include "snapshot.h"
 #include "version.h"
 #include "zbd_zenfs.h"
@@ -162,7 +154,6 @@ class ZenFS : public FileSystemWrapper {
 
   void LogFiles();
   void ClearFiles();
-  std::string FormatPathLexically(fs::path filepath);
   IOStatus WriteSnapshotLocked(ZenMetaLog* meta_log);
   IOStatus WriteEndRecord(ZenMetaLog* meta_log);
   IOStatus RollMetaZoneLocked();
@@ -266,12 +257,14 @@ class ZenFS : public FileSystemWrapper {
                             IODebugContext* dbg, bool reopen);
 
  public:
-  explicit ZenFS(ZonedBlockDevice* zbd, std::shared_ptr<FileSystem> aux_fs,
+  explicit ZenFS(std::unique_ptr<ZonedBlockDevice> zbd,
+                 std::shared_ptr<FileSystem> aux_fs,
                  std::shared_ptr<Logger> logger);
   virtual ~ZenFS();
 
   Status Mount(bool readonly);
-  Status MkFS(std::string aux_fs_path, uint32_t finish_threshold);
+  Status MkFS(fs::path const& aux_fs_path,
+              uint32_t finish_threshold);
   std::map<std::string, Env::WriteLifeTimeHint> GetWriteLifeTimeHints();
 
   const char* Name() const override {
@@ -448,6 +441,9 @@ class ZenFS : public FileSystemWrapper {
       const std::string& fname,
       const std::vector<ZoneExtentSnapshot*>& migrate_exts);
 };
+
+fs::path FormatPathLexically(fs::path filepath);
+
 #endif  // !defined(ROCKSDB_LITE) && defined(OS_LINUX)
 
 Status NewZenFS(

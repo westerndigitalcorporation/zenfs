@@ -12,6 +12,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -63,9 +64,11 @@ int zenfs_tool_mkfs() {
     return 1;
   }
 
-  return zenfs_mkfs(std::filesystem::path(FLAGS_zbd),
-                    std::filesystem::path(FLAGS_aux_path),
-                    FLAGS_finish_threshold, FLAGS_force);
+  s = zenfs_mkfs(fs::path(FLAGS_zbd),
+                 fs::path(FLAGS_aux_path), FLAGS_finish_threshold,
+                 FLAGS_force);
+
+  return !s.ok();
 }
 
 void list_children(const std::unique_ptr<ZenFS> &zenFS,
@@ -109,11 +112,14 @@ void list_children(const std::unique_ptr<ZenFS> &zenFS,
 
 int zenfs_tool_list() {
   Status s;
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(FLAGS_zbd, true, false);
-  if (!zbd) return 1;
+  std::unique_ptr<ZonedBlockDevice> zbd;
+  s = zenfs_zbd_open(FLAGS_zbd, true, false, zbd);
+  if (!s.ok() || !zbd) {
+    return 1;
+  }
 
   std::unique_ptr<ZenFS> zenFS;
-  s = zenfs_mount(zbd, &zenFS, true);
+  s = zenfs_mount(zbd, true, zenFS);
   if (!s.ok()) {
     fprintf(stderr, "Failed to mount filesystem, error: %s\n",
             s.ToString().c_str());
@@ -127,20 +133,22 @@ int zenfs_tool_list() {
 
 int zenfs_tool_df() {
   Status s;
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(FLAGS_zbd, true, false);
-  if (!zbd) return 1;
-  ZonedBlockDevice *zbdRaw = zbd.get();
-
+  std::unique_ptr<ZonedBlockDevice> zbd;
   std::unique_ptr<ZenFS> zenFS;
-  s = zenfs_mount(zbd, &zenFS, true);
+
+  s = zenfs_zbd_open(FLAGS_zbd, true, false, zbd);
+  if (!s.ok() || !zbd) return 1;
+
+  uint64_t used = zbd->GetUsedSpace();
+  uint64_t free = zbd->GetFreeSpace();
+  uint64_t reclaimable = zbd->GetReclaimableSpace();
+
+  s = zenfs_mount(zbd, true, zenFS);
   if (!s.ok()) {
     fprintf(stderr, "Failed to mount filesystem, error: %s\n",
             s.ToString().c_str());
     return 1;
   }
-  uint64_t used = zbdRaw->GetUsedSpace();
-  uint64_t free = zbdRaw->GetFreeSpace();
-  uint64_t reclaimable = zbdRaw->GetReclaimableSpace();
 
   /* Avoid divide by zero */
   if (used == 0) used = 1;
@@ -347,21 +355,29 @@ int zenfs_tool_backup() {
   IOStatus io_status;
   IOOptions opts;
   IODebugContext dbg;
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(FLAGS_zbd, true, true);
+  std::unique_ptr<ZonedBlockDevice> zbd;
+
+  status = zenfs_zbd_open(FLAGS_zbd, true, true, zbd);
+  if (!status.ok()) {
+    return 1;
+  }
 
   if (!zbd) {
     if (FLAGS_force) {
       fprintf(stderr,
               "WARNING: attempting to back up a zoned block device in use! "
               "Expect data loss and corruption.\n");
-      zbd = zbd_open(FLAGS_zbd, true, false);
+      status = zenfs_zbd_open(FLAGS_zbd, true, false, zbd);
+      if (!status.ok()) {
+        return 1;
+      }
     }
   }
 
   if (!zbd) return 1;
 
   std::unique_ptr<ZenFS> zenFS;
-  status = zenfs_mount(zbd, &zenFS, true);
+  status = zenfs_mount(zbd, true, zenFS);
   if (!status.ok()) {
     fprintf(stderr, "Failed to mount filesystem, error: %s\n",
             status.ToString().c_str());
@@ -411,16 +427,18 @@ int zenfs_tool_link() {
   IOStatus io_s;
   IOOptions iopts;
   IODebugContext dbg;
+  std::unique_ptr<ZonedBlockDevice> zbd;
+  std::unique_ptr<ZenFS> zenFS;
 
   if (FLAGS_src_file.empty() || FLAGS_dest_file.empty()) {
     fprintf(stderr, "Error: Specify --src_file and --dest_file to be linked\n");
     return 1;
   }
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(FLAGS_zbd, false, true);
-  if (!zbd) return 1;
 
-  std::unique_ptr<ZenFS> zenFS;
-  s = zenfs_mount(zbd, &zenFS, false);
+  s = zenfs_zbd_open(FLAGS_zbd, false, true, zbd);
+  if (!s.ok() || !zbd) return 1;
+
+  s = zenfs_mount(zbd, false, zenFS);
   if (!s.ok()) {
     fprintf(stderr, "Failed to mount filesystem, error: %s\n",
             s.ToString().c_str());
@@ -443,16 +461,18 @@ int zenfs_tool_delete_file() {
   IOStatus io_s;
   IOOptions iopts;
   IODebugContext dbg;
+  std::unique_ptr<ZonedBlockDevice> zbd;
+  std::unique_ptr<ZenFS> zenFS;
 
   if (FLAGS_path.empty()) {
     fprintf(stderr, "Error: Specify --path of the file to be deleted.\n");
     return 1;
   }
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(FLAGS_zbd, false, true);
-  if (!zbd) return 1;
 
-  std::unique_ptr<ZenFS> zenFS;
-  s = zenfs_mount(zbd, &zenFS, false);
+  s = zenfs_zbd_open(FLAGS_zbd, false, true, zbd);
+  if (!s.ok() || !zbd) return 1;
+
+  s = zenfs_mount(zbd, false, zenFS);
   if (!s.ok()) {
     fprintf(stderr, "Failed to mount filesystem, error: %s\n",
             s.ToString().c_str());
@@ -474,17 +494,19 @@ int zenfs_tool_rename_file() {
   IOStatus io_s;
   IOOptions iopts;
   IODebugContext dbg;
+  std::unique_ptr<ZonedBlockDevice> zbd;
+  std::unique_ptr<ZenFS> zenFS;
 
   if (FLAGS_src_file.empty() || FLAGS_dest_file.empty()) {
     fprintf(stderr,
             "Error: Specify --src_file and --dest_file to be renamed\n");
     return 1;
   }
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(FLAGS_zbd, false, true);
-  if (!zbd) return 1;
 
-  std::unique_ptr<ZenFS> zenFS;
-  s = zenfs_mount(zbd, &zenFS, false);
+  s = zenfs_zbd_open(FLAGS_zbd, false, true, zbd);
+  if (!s.ok() || !zbd) return 1;
+
+  s = zenfs_mount(zbd, false, zenFS);
   if (!s.ok()) {
     fprintf(stderr, "Failed to mount filesystem, error: %s\n",
             s.ToString().c_str());
@@ -512,11 +534,13 @@ int zenfs_tool_remove_directory() {
     fprintf(stderr, "Error: Specify --path of the directory to be deleted.\n");
     return 1;
   }
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(FLAGS_zbd, false, true);
-  if (!zbd) return 1;
+
+  std::unique_ptr<ZonedBlockDevice> zbd;
+  s = zenfs_zbd_open(FLAGS_zbd, false, true, zbd);
+  if (!s.ok() || !zbd) return 1;
 
   std::unique_ptr<ZenFS> zenFS;
-  s = zenfs_mount(zbd, &zenFS, false);
+  s = zenfs_mount(zbd, false, zenFS);
   if (!s.ok()) {
     fprintf(stderr, "Failed to mount filesystem, error: %s\n",
             s.ToString().c_str());
@@ -568,11 +592,12 @@ int zenfs_tool_restore() {
     return 1;
   }
 
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(FLAGS_zbd, false, true);
-  if (!zbd) return 1;
+  std::unique_ptr<ZonedBlockDevice> zbd;
+  status = zenfs_zbd_open(FLAGS_zbd, false, true, zbd);
+  if (!status.ok() || !zbd) return 1;
 
   std::unique_ptr<ZenFS> zenFS;
-  status = zenfs_mount(zbd, &zenFS, false);
+  status = zenfs_mount(zbd, false, zenFS);
   if (!status.ok()) {
     fprintf(stderr, "Failed to mount filesystem, error: %s\n",
             status.ToString().c_str());
@@ -607,21 +632,23 @@ int zenfs_tool_restore() {
 
 int zenfs_tool_dump() {
   Status s;
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(FLAGS_zbd, true, false);
-  if (!zbd) return 1;
-  ZonedBlockDevice *zbdRaw = zbd.get();
-
+  std::unique_ptr<ZonedBlockDevice> zbd;
   std::unique_ptr<ZenFS> zenFS;
-  s = zenfs_mount(zbd, &zenFS, true);
+  std::ostream &json_stream = std::cout;
+
+  s = zenfs_zbd_open(FLAGS_zbd, true, false, zbd);
+  if (!s.ok() || !zbd) return 1;
+
+  json_stream << "{\"zones\":";
+  zbd->EncodeJson(json_stream);
+
+  s = zenfs_mount(zbd, true, zenFS);
   if (!s.ok()) {
     fprintf(stderr, "Failed to mount filesystem, error: %s\n",
             s.ToString().c_str());
     return 1;
   }
 
-  std::ostream &json_stream = std::cout;
-  json_stream << "{\"zones\":";
-  zbdRaw->EncodeJson(json_stream);
   json_stream << ",\"files\":";
   zenFS->EncodeJson(json_stream);
   json_stream << "}";
@@ -631,11 +658,12 @@ int zenfs_tool_dump() {
 
 int zenfs_tool_fsinfo() {
   Status s;
-  std::unique_ptr<ZonedBlockDevice> zbd = zbd_open(FLAGS_zbd, true, false);
-  if (!zbd) return 1;
+  std::unique_ptr<ZonedBlockDevice> zbd;
+  s = zenfs_zbd_open(FLAGS_zbd, true, false, zbd);
+  if (!s.ok() || !zbd) return 1;
 
   std::unique_ptr<ZenFS> zenFS;
-  s = zenfs_mount(zbd, &zenFS, true);
+  s = zenfs_mount(zbd, true, zenFS);
   if (!s.ok()) {
     fprintf(stderr, "Failed to mount filesystem, error: %s\n",
             s.ToString().c_str());
