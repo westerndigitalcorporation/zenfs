@@ -1514,7 +1514,8 @@ static std::string GetLogFilename(std::string bdev) {
 }
 #endif
 
-Status NewZenFS(FileSystem** fs, const std::string& bdevname,
+Status NewZenFS(FileSystem** fs, const ZbdBackendType backend_type,
+                const std::string& backend_name,
                 std::shared_ptr<ZenFSMetrics> metrics) {
   std::shared_ptr<Logger> logger;
   Status s;
@@ -1525,7 +1526,7 @@ Status NewZenFS(FileSystem** fs, const std::string& bdevname,
   // TODO(guokuankuan@bytedance.com) We need to figure out how to reuse
   // RocksDB's logger in the future.
 #if !defined(NDEBUG) || defined(WITH_TERARKDB)
-  s = Env::Default()->NewLogger(GetLogFilename(bdevname), &logger);
+  s = Env::Default()->NewLogger(GetLogFilename(backend_name), &logger);
   if (!s.ok()) {
     fprintf(stderr, "ZenFS: Could not create logger");
   } else {
@@ -1536,7 +1537,8 @@ Status NewZenFS(FileSystem** fs, const std::string& bdevname,
   }
 #endif
 
-  ZonedBlockDevice* zbd = new ZonedBlockDevice(bdevname, logger, metrics);
+  ZonedBlockDevice* zbd =
+      new ZonedBlockDevice(backend_name, backend_type, logger, metrics);
   IOStatus zbd_status = zbd->Open(false, true);
   if (!zbd_status.ok()) {
     Error(logger, "mkfs: Failed to open zoned block device: %s",
@@ -1569,7 +1571,7 @@ Status ListZenFileSystems(std::map<std::string, std::string>& out_list) {
     if (entry->d_type == DT_LNK) {
       std::string zbdName = std::string(entry->d_name);
       std::unique_ptr<ZonedBlockDevice> zbd{
-          new ZonedBlockDevice(zbdName, nullptr)};
+          new ZonedBlockDevice(zbdName, ZbdBackendType::kBlockDev, nullptr)};
       IOStatus zbd_status = zbd->Open(true, false);
 
       if (zbd_status.ok()) {
@@ -1782,10 +1784,10 @@ FactoryFunc<FileSystem> zenfs_filesystem_reg =
           if (devID.rfind("dev:") == 0) {
             devID.replace(0, strlen("dev:"), "");
 #ifdef ZENFS_EXPORT_PROMETHEUS
-            s = NewZenFS(&fs, devID,
+            s = NewZenFS(&fs, ZbdBackendType::kBlockDev, devID,
                          std::make_shared<ZenFSPrometheusMetrics>());
 #else
-            s = NewZenFS(&fs, devID);
+            s = NewZenFS(&fs, ZbdBackendType::kBlockDev, devID);
 #endif
             if (!s.ok()) {
               *errmsg = s.ToString();
@@ -1803,15 +1805,23 @@ FactoryFunc<FileSystem> zenfs_filesystem_reg =
               } else {
 
 #ifdef ZENFS_EXPORT_PROMETHEUS
-                s = NewZenFS(&fs, zenFileSystems[devID],
+                s = NewZenFS(&fs, ZbdBackendType::kBlockDev,
+                             zenFileSystems[devID],
                              std::make_shared<ZenFSPrometheusMetrics>());
 #else
-                s = NewZenFS(&fs, zenFileSystems[devID]);
+                s = NewZenFS(&fs, ZbdBackendType::kBlockDev,
+                             zenFileSystems[devID]);
 #endif
                 if (!s.ok()) {
                   *errmsg = s.ToString();
                 }
               }
+            }
+          } else if (devID.rfind("zonefs:") == 0) {
+            devID.replace(0, strlen("zonefs:"), "");
+            s = NewZenFS(&fs, ZbdBackendType::kZoneFS, devID);
+            if (!s.ok()) {
+              *errmsg = s.ToString();
             }
           } else {
             *errmsg = "Malformed URI";
@@ -1826,7 +1836,8 @@ FactoryFunc<FileSystem> zenfs_filesystem_reg =
 #include "rocksdb/env.h"
 
 namespace ROCKSDB_NAMESPACE {
-Status NewZenFS(FileSystem** /*fs*/, const std::string& /*bdevname*/,
+Status NewZenFS(FileSystem** /*fs*/, const ZbdBackendType /*backend_type*/,
+                const std::string& /*backend_name*/,
                 ZenFSMetrics* /*metrics*/) {
   return Status::NotSupported("Not built with ZenFS support\n");
 }
