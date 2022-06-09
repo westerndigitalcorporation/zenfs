@@ -394,12 +394,17 @@ Zone *ZonedBlockDevice::GetIOZone(uint64_t offset) {
   return nullptr;
 }
 
-ZonedBlockDevice::ZonedBlockDevice(std::string bdevname,
+ZonedBlockDevice::ZonedBlockDevice(std::string path, ZbdBackendType backend,
                                    std::shared_ptr<Logger> logger,
                                    std::shared_ptr<ZenFSMetrics> metrics)
     : logger_(logger), metrics_(metrics) {
-  zbd_be_ = std::make_unique<ZbdlibBackend>(bdevname);
-  Info(logger_, "New Zoned Block Device: %s", zbd_be_->GetFilename().c_str());
+  if (backend == ZbdBackendType::kBlockDev) {
+    zbd_be_ = std::make_unique<ZbdlibBackend>(path);
+    Info(logger_, "New Zoned Block Device: %s", zbd_be_->GetFilename().c_str());
+  } else if (backend == ZbdBackendType::kZoneFS) {
+    zbd_be_ = NULL;
+    Info(logger_, "Unsupported zonefs backing requested");
+  }
 }
 
 IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
@@ -412,6 +417,11 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   // Reserve one zone for metadata and another one for extent migration
   int reserved_zones = 2;
 
+  if (zbd_be_ == NULL) {
+    return IOStatus::NotSupported(
+        "Requested zoned backend not supported");
+  }
+
   if (!readonly && !exclusive)
     return IOStatus::InvalidArgument("Write opens must be exclusive");
 
@@ -421,7 +431,7 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   if (ios != IOStatus::OK()) return ios;
 
   if (nr_zones_ < ZENFS_MIN_ZONES) {
-    return IOStatus::NotSupported("To few zones on zoned block device (" +
+    return IOStatus::NotSupported("To few zones on zoned backend (" +
                                   std::to_string(ZENFS_MIN_ZONES) +
                                   " required)");
   }
@@ -865,6 +875,8 @@ int ZonedBlockDevice::Read(char *buf, uint64_t offset, int n, bool direct) {
   int ret = 0;
   int left = n;
   int r = -1;
+
+  if (zbd_be_ == NULL) return -1;
 
   while (left) {
     r = zbd_be_->Read(buf, left, offset, direct);

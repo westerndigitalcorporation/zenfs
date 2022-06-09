@@ -131,6 +131,11 @@ class ZonedBlockDeviceBackend {
   virtual ~ZonedBlockDeviceBackend() = 0;
 };
 
+enum class ZbdBackendType {
+  kBlockDev,
+  kZoneFS,
+};
+
 class ZonedBlockDevice {
  private:
   std::unique_ptr<ZonedBlockDeviceBackend> zbd_be_;
@@ -167,7 +172,7 @@ class ZonedBlockDevice {
                       const std::vector<Zone *> zones);
 
  public:
-  explicit ZonedBlockDevice(std::string bdevname,
+  explicit ZonedBlockDevice(std::string path, ZbdBackendType backend,
                             std::shared_ptr<Logger> logger,
                             std::shared_ptr<ZenFSMetrics> metrics =
                                 std::make_shared<NoZenFSMetrics>());

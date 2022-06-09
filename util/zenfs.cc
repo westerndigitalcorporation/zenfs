@@ -31,6 +31,7 @@ using GFLAGS_NAMESPACE::RegisterFlagValidator;
 using GFLAGS_NAMESPACE::SetUsageMessage;
 
 DEFINE_string(zbd, "", "Path to a zoned block device.");
+DEFINE_string(zonefs, "", "Path to a zonefs mountpoint.");
 DEFINE_string(aux_path, "",
               "Path for auxiliary file storage (log and lock files).");
 DEFINE_bool(
@@ -54,8 +55,11 @@ void AddDirSeparatorAtEnd(std::string &path) {
 }
 
 std::unique_ptr<ZonedBlockDevice> zbd_open(bool readonly, bool exclusive) {
-  std::unique_ptr<ZonedBlockDevice> zbd{
-      new ZonedBlockDevice(FLAGS_zbd, nullptr)};
+  std::unique_ptr<ZonedBlockDevice> zbd{new ZonedBlockDevice(
+      FLAGS_zbd.empty() ? FLAGS_zonefs : FLAGS_zbd,
+      FLAGS_zbd.empty() ? ZbdBackendType::kZoneFS : ZbdBackendType::kBlockDev,
+      nullptr)};
+
   IOStatus open_status = zbd->Open(readonly, exclusive);
 
   if (!open_status.ok()) {
@@ -788,8 +792,16 @@ int main(int argc, char **argv) {
   std::string subcmd(argv[1]);
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  if (FLAGS_zbd.empty() && subcmd != "ls-uuid") {
-    fprintf(stderr, "You need to specify a zoned block device using --zbd\n");
+  if (FLAGS_zonefs.empty() && FLAGS_zbd.empty() && subcmd != "ls-uuid") {
+    fprintf(
+        stderr,
+        "You need to specify a zoned block device using --zbd or --zonefs\n");
+    return 1;
+  }
+  if (!FLAGS_zonefs.empty() && !FLAGS_zbd.empty()) {
+    fprintf(stderr,
+            "You need to specify a zoned block device using either "
+            "--zbd or --zonefs - not both\n");
     return 1;
   }
   if (subcmd == "mkfs") {
