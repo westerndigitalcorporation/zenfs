@@ -30,6 +30,7 @@
 #include "rocksdb/env.h"
 #include "rocksdb/io_status.h"
 #include "snapshot.h"
+#include "zonefs_zenfs.h"
 
 #define KB (1024)
 #define MB (1024 * KB)
@@ -402,8 +403,8 @@ ZonedBlockDevice::ZonedBlockDevice(std::string path, ZbdBackendType backend,
     zbd_be_ = std::make_unique<ZbdlibBackend>(path);
     Info(logger_, "New Zoned Block Device: %s", zbd_be_->GetFilename().c_str());
   } else if (backend == ZbdBackendType::kZoneFS) {
-    zbd_be_ = NULL;
-    Info(logger_, "Unsupported zonefs backing requested");
+    zbd_be_ = std::make_unique<ZoneFsBackend>(path);
+    Info(logger_, "New zonefs backing: %s", zbd_be_->GetFilename().c_str());
   }
 }
 
@@ -416,11 +417,6 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   uint64_t m = 0;
   // Reserve one zone for metadata and another one for extent migration
   int reserved_zones = 2;
-
-  if (zbd_be_ == NULL) {
-    return IOStatus::NotSupported(
-        "Requested zoned backend not supported");
-  }
 
   if (!readonly && !exclusive)
     return IOStatus::InvalidArgument("Write opens must be exclusive");
@@ -875,8 +871,6 @@ int ZonedBlockDevice::Read(char *buf, uint64_t offset, int n, bool direct) {
   int ret = 0;
   int left = n;
   int r = -1;
-
-  if (zbd_be_ == NULL) return -1;
 
   while (left) {
     r = zbd_be_->Read(buf, left, offset, direct);
