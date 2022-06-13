@@ -262,19 +262,6 @@ void ZoneFile::ClearExtents() {
   extents_.clear();
 }
 
-IOStatus ZoneFile::CloseWR() {
-  IOStatus s;
-  if (open_for_wr_) {
-    /* Mark up the file as being closed */
-    extent_start_ = NO_EXTENT;
-    s = PersistMetadata();
-    if (!s.ok()) return s;
-    open_for_wr_ = false;
-    s = CloseActiveZone();
-  }
-  return s;
-}
-
 IOStatus ZoneFile::CloseActiveZone() {
   IOStatus s = IOStatus::OK();
   if (active_zone_) {
@@ -292,11 +279,34 @@ IOStatus ZoneFile::CloseActiveZone() {
   return s;
 }
 
-void ZoneFile::OpenWR() {
+void ZoneFile::AcquireWRLock() {
+  open_for_wr_mtx_.lock();
   open_for_wr_ = true;
 }
 
+bool ZoneFile::TryAcquireWRLock() {
+  if (!open_for_wr_mtx_.try_lock()) return false;
+  open_for_wr_ = true;
+  return true;
+}
+
+void ZoneFile::ReleaseWRLock() {
+  assert(open_for_wr_);
+  open_for_wr_ = false;
+  open_for_wr_mtx_.unlock();
+}
+
 bool ZoneFile::IsOpenForWR() { return open_for_wr_; }
+
+IOStatus ZoneFile::CloseWR() {
+  IOStatus s;
+  /* Mark up the file as being closed */
+  extent_start_ = NO_EXTENT;
+  s = PersistMetadata();
+  if (!s.ok()) return s;
+  ReleaseWRLock();
+  return CloseActiveZone();
+}
 
 IOStatus ZoneFile::PersistMetadata() {
   assert(metadata_writer_ != NULL);
@@ -756,6 +766,7 @@ void ZoneFile::SetActiveZone(Zone* zone) {
 
 ZonedWritableFile::ZonedWritableFile(ZonedBlockDevice* zbd, bool _buffered,
                                      std::shared_ptr<ZoneFile> zoneFile) {
+  assert(zoneFile->IsOpenForWR());
   wp = zoneFile->GetFileSize();
 
   buffered = _buffered;
@@ -790,7 +801,7 @@ ZonedWritableFile::ZonedWritableFile(ZonedBlockDevice* zbd, bool _buffered,
     }
   }
 
-  zoneFile_->OpenWR();
+  open = true;
 }
 
 ZonedWritableFile::~ZonedWritableFile() {
@@ -884,14 +895,18 @@ IOStatus ZonedWritableFile::Close(const IOOptions& /*options*/,
 }
 
 IOStatus ZonedWritableFile::CloseInternal() {
-  if (!zoneFile_->IsOpenForWR()) {
+  if (!open) {
     return IOStatus::OK();
   }
 
   IOStatus s = DataSync();
   if (!s.ok()) return s;
 
-  return zoneFile_->CloseWR();
+  s = zoneFile_->CloseWR();
+  if (!s.ok()) return s;
+
+  open = false;
+  return s;
 }
 
 IOStatus ZonedWritableFile::FlushBuffer() {

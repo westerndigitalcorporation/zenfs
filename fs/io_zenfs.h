@@ -68,6 +68,8 @@ class ZoneFile {
 
   uint32_t nr_synced_extents_ = 0;
   bool open_for_wr_ = false;
+  std::mutex open_for_wr_mtx_;
+
   time_t m_time_;
   bool is_sparse_ = false;
   bool is_deleted_ = false;
@@ -85,9 +87,13 @@ class ZoneFile {
 
   virtual ~ZoneFile();
 
-  void OpenWR();
+  void AcquireWRLock();
+  bool TryAcquireWRLock();
+  void ReleaseWRLock();
+
   IOStatus CloseWR();
   bool IsOpenForWR();
+
   IOStatus PersistMetadata();
 
   IOStatus Append(void* buffer, int data_size);
@@ -243,6 +249,7 @@ class ZonedWritableFile : public FSWritableFile {
   uint32_t buffer_pos;
   uint64_t wp;
   int write_temp;
+  bool open;
 
   std::shared_ptr<ZoneFile> zoneFile_;
   MetadataWriter* metadata_writer_;
