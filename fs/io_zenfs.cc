@@ -227,7 +227,8 @@ Status ZoneFile::MergeUpdate(std::shared_ptr<ZoneFile> update, bool replace) {
   return Status::OK();
 }
 
-ZoneFile::ZoneFile(ZonedBlockDevice* zbd, uint64_t file_id)
+ZoneFile::ZoneFile(ZonedBlockDevice* zbd, uint64_t file_id,
+                   MetadataWriter* metadata_writer)
     : zbd_(zbd),
       active_zone_(NULL),
       extent_start_(NO_EXTENT),
@@ -237,7 +238,8 @@ ZoneFile::ZoneFile(ZonedBlockDevice* zbd, uint64_t file_id)
       file_size_(0),
       file_id_(file_id),
       nr_synced_extents_(0),
-      m_time_(0) {}
+      m_time_(0),
+      metadata_writer_(metadata_writer) {}
 
 std::string ZoneFile::GetFilename() { return linkfiles_[0]; }
 time_t ZoneFile::GetFileModificationTime() { return m_time_; }
@@ -290,9 +292,8 @@ IOStatus ZoneFile::CloseActiveZone() {
   return s;
 }
 
-void ZoneFile::OpenWR(MetadataWriter* metadata_writer) {
+void ZoneFile::OpenWR() {
   open_for_wr_ = true;
-  metadata_writer_ = metadata_writer;
 }
 
 bool ZoneFile::IsOpenForWR() { return open_for_wr_; }
@@ -754,8 +755,7 @@ void ZoneFile::SetActiveZone(Zone* zone) {
 }
 
 ZonedWritableFile::ZonedWritableFile(ZonedBlockDevice* zbd, bool _buffered,
-                                     std::shared_ptr<ZoneFile> zoneFile,
-                                     MetadataWriter* metadata_writer) {
+                                     std::shared_ptr<ZoneFile> zoneFile) {
   wp = zoneFile->GetFileSize();
 
   buffered = _buffered;
@@ -790,7 +790,7 @@ ZonedWritableFile::ZonedWritableFile(ZonedBlockDevice* zbd, bool _buffered,
     }
   }
 
-  zoneFile_->OpenWR(metadata_writer);
+  zoneFile_->OpenWR();
 }
 
 ZonedWritableFile::~ZonedWritableFile() {

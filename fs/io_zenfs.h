@@ -80,11 +80,12 @@ class ZoneFile {
  public:
   static const int SPARSE_HEADER_SIZE = 8;
 
-  explicit ZoneFile(ZonedBlockDevice* zbd, uint64_t file_id_);
+  explicit ZoneFile(ZonedBlockDevice* zbd, uint64_t file_id_,
+                    MetadataWriter* metadata_writer);
 
   virtual ~ZoneFile();
 
-  void OpenWR(MetadataWriter* metadata_writer);
+  void OpenWR();
   IOStatus CloseWR();
   bool IsOpenForWR();
   IOStatus PersistMetadata();
@@ -186,8 +187,7 @@ class ZoneFile {
 class ZonedWritableFile : public FSWritableFile {
  public:
   explicit ZonedWritableFile(ZonedBlockDevice* zbd, bool buffered,
-                             std::shared_ptr<ZoneFile> zoneFile,
-                             MetadataWriter* metadata_writer = nullptr);
+                             std::shared_ptr<ZoneFile> zoneFile);
   virtual ~ZonedWritableFile();
 
   virtual IOStatus Append(const Slice& data, const IOOptions& options,
