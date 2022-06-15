@@ -14,6 +14,7 @@
 #include <mntent.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <unistd.h>
@@ -35,11 +36,17 @@ namespace ROCKSDB_NAMESPACE {
 
 ZoneFsBackend::ZoneFsBackend(std::string mountpoint)
     : mountpoint_(mountpoint),
+      zone_zero_fd_(-1),
       readonly_(false),
       rd_fd_(0, nullptr),
       direct_rd_fd_(0, nullptr) {}
 
-ZoneFsBackend::~ZoneFsBackend() {}
+ZoneFsBackend::~ZoneFsBackend() {
+  if (zone_zero_fd_ != -1) {
+    // Releases zone 0 lock
+    close(zone_zero_fd_);
+  }
+}
 
 std::string ZoneFsBackend::ErrorToString(int err) {
   char *err_str = strerror(err);
@@ -109,12 +116,27 @@ IOStatus ZoneFsBackend::Open(bool readonly,
   nr_zones_ = zonefs_stat.st_size;
 
   seqdirname += "/0";
-  if (stat(seqdirname.c_str(), &zonefs_stat) == -1) {
+  int zone_zero_fd = open(seqdirname.c_str(), O_RDONLY);
+  if (zone_zero_fd < 0) {
+    return IOStatus::InvalidArgument(
+        "Failed to open zonefs sequential zone 0: " + ErrorToString(errno));
+  }
+
+  if (flock(zone_zero_fd, LOCK_EX | LOCK_NB) == -1) {
+    close(zone_zero_fd);
+    return IOStatus::InvalidArgument(
+        "Failed to lock zonefs sequential zone 0: " + ErrorToString(errno));
+  }
+
+  if (fstat(zone_zero_fd, &zonefs_stat) == -1) {
+    close(zone_zero_fd);
     return IOStatus::InvalidArgument(
         "Failed to access zonefs sequential zone 0: " + ErrorToString(errno));
   }
   zone_sz_ = zonefs_stat.st_blocks * 512;
   block_sz_ = zonefs_stat.st_blksize;
+
+  zone_zero_fd_ = zone_zero_fd;
 
   std::string backing_dev =
       ZoneFsBackend::GetBackingDevice(mountpoint_.c_str());
