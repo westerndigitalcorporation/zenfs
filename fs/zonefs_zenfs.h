@@ -35,6 +35,7 @@ class ZoneFsFile {
 class ZoneFsBackend : public ZonedBlockDeviceBackend {
  private:
   std::string mountpoint_;
+  int zone_zero_fd_;
   bool readonly_;
   std::pair<uint64_t, std::shared_ptr<ZoneFsFile>> rd_fd_;
   std::pair<uint64_t, std::shared_ptr<ZoneFsFile>> direct_rd_fd_;
