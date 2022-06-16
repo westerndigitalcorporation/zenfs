@@ -62,6 +62,13 @@ do
     echo "$(tput setaf 1)FAILED$(tput sgr 0)"
     FAILED_TESTS=$((FAILED_TESTS+1))
   fi
+
+  if [ -v LOG_FILE_PATH ]; then
+    set -e
+    cp $LOG_FILE_PATH "$RESULT_PATH/${TEST/.sh/.LOG}"
+    set +e
+  fi
+
 done
 
 echo ""
