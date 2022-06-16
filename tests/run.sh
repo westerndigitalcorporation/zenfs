@@ -47,6 +47,12 @@ do
   export RESULT_DIR="$RESULT_DIR"
   export TEST_OUT="$RESULT_PATH/${TEST/.sh/.out}"
   START_SECONDS=$SECONDS
+  
+  if [ -v PRE_CMD ]; then
+    set +e
+    $PRE_CMD > "$RESULT_PATH/${TEST/.sh/.PRE_CMD.out}"
+    set -e
+  fi
 
   set +e
   $TESTCASE
@@ -64,9 +70,15 @@ do
   fi
 
   if [ -v LOG_FILE_PATH ]; then
-    set -e
-    cp $LOG_FILE_PATH "$RESULT_PATH/${TEST/.sh/.LOG}"
     set +e
+    cp $LOG_FILE_PATH "$RESULT_PATH/${TEST/.sh/.LOG}"
+    set -e
+  fi
+
+  if [ -v POST_CMD ]; then
+    set +e
+    $POST_CMD > "$RESULT_PATH/${TEST/.sh/.POST_CMD.out}"
+    set -e
   fi
 
 done
