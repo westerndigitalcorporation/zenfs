@@ -39,6 +39,7 @@ class path {
 
     if (src_path_.compare("/") == 0) {
       normalized_path_ = src_path_;
+      has_terminator_ = true;
       return *this;
     }
 
@@ -108,7 +109,11 @@ class path {
   bool has_filename() { return !filename_.empty(); }
 
   path operator/(const path& other) const {
-    return path(normalized_path_ + other.string());
+    std::string seperator = "/";
+    if (has_terminator_) {
+      seperator = "";
+    }
+    return path(normalized_path_ + seperator + other.string());
   }
 
  private:
