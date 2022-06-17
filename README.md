@@ -123,6 +123,15 @@ The convenience script can be used to run all crashtest sets defined in `tests/c
 cd tests; ./zenfs_base_crashtest.sh <zoned block device name>
 ```
 
+## Prometheus Metrics Exporter
+
+To export performance metrics to Prometheus, do the following:
+
+Set environment variable ZENFS_EXPORT_PROMETHEUS=y when building to enable
+prometheus export of metrics. Exporter will listen on 127.0.0.1:8080.
+
+**Requires prometheus-cpp-pull == 1.1.0**
+
 # ZenFS Internals
 
 ## Architecture overview

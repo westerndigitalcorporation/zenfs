@@ -19,6 +19,9 @@
 #include <utility>
 #include <vector>
 
+#ifdef ZENFS_EXPORT_PROMETHEUS
+#include "metrics_prometheus.h"
+#endif
 #include "rocksdb/utilities/object_registry.h"
 #include "snapshot.h"
 #include "util/coding.h"
@@ -1779,7 +1782,12 @@ FactoryFunc<FileSystem> zenfs_filesystem_reg =
           devID.replace(0, strlen("zenfs://"), "");
           if (devID.rfind("dev:") == 0) {
             devID.replace(0, strlen("dev:"), "");
+#ifdef ZENFS_EXPORT_PROMETHEUS
+            s = NewZenFS(&fs, devID,
+                         std::make_shared<ZenFSPrometheusMetrics>());
+#else
             s = NewZenFS(&fs, devID);
+#endif
             if (!s.ok()) {
               *errmsg = s.ToString();
             }
@@ -1794,7 +1802,13 @@ FactoryFunc<FileSystem> zenfs_filesystem_reg =
               if (zenFileSystems.find(devID) == zenFileSystems.end()) {
                 *errmsg = "UUID not found";
               } else {
+
+#ifdef ZENFS_EXPORT_PROMETHEUS
+                s = NewZenFS(&fs, zenFileSystems[devID],
+                             std::make_shared<ZenFSPrometheusMetrics>());
+#else
                 s = NewZenFS(&fs, zenFileSystems[devID]);
+#endif
                 if (!s.ok()) {
                   *errmsg = s.ToString();
                 }
