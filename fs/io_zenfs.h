@@ -134,7 +134,6 @@ class ZoneFile {
   Status MergeUpdate(std::shared_ptr<ZoneFile> update, bool replace);
 
   uint64_t GetID() { return file_id_; }
-  size_t GetUniqueId(char* id, size_t max_size);
 
   bool IsSparse() { return is_sparse_; };
 
@@ -318,8 +317,6 @@ class ZonedRandomAccessFile : public FSRandomAccessFile {
   IOStatus InvalidateCache(size_t /*offset*/, size_t /*length*/) override {
     return IOStatus::OK();
   }
-
-  size_t GetUniqueId(char* id, size_t max_size) const override;
 };
 
 }  // namespace ROCKSDB_NAMESPACE
