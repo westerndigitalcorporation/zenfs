@@ -1050,29 +1050,6 @@ IOStatus ZonedRandomAccessFile::Read(uint64_t offset, size_t n,
   return zoneFile_->PositionedRead(offset, n, result, scratch, direct_);
 }
 
-size_t ZoneFile::GetUniqueId(char* id, size_t max_size) {
-  /* Based on the posix fs implementation */
-  if (max_size < kMaxVarint64Length * 3) {
-    return 0;
-  }
-
-  struct stat buf;
-  int fd = zbd_->GetReadFD();
-  int result = fstat(fd, &buf);
-  if (result == -1) {
-    return 0;
-  }
-
-  char* rid = id;
-  rid = EncodeVarint64(rid, buf.st_dev);
-  rid = EncodeVarint64(rid, buf.st_ino);
-  rid = EncodeVarint64(rid, file_id_);
-  assert(rid >= id);
-  return static_cast<size_t>(rid - id);
-
-  return 0;
-}
-
 IOStatus ZoneFile::MigrateData(uint64_t offset, uint32_t length,
                                Zone* target_zone) {
   uint32_t step = 128 << 10;
@@ -1108,10 +1085,6 @@ IOStatus ZoneFile::MigrateData(uint64_t offset, uint32_t length,
   free(buf);
 
   return IOStatus::OK();
-}
-
-size_t ZonedRandomAccessFile::GetUniqueId(char* id, size_t max_size) const {
-  return zoneFile_->GetUniqueId(id, max_size);
 }
 
 }  // namespace ROCKSDB_NAMESPACE
