@@ -194,7 +194,12 @@ class ZenFS : public FileSystemWrapper {
   Status RecoverFrom(ZenMetaLog* log);
 
   std::string ToAuxPath(std::string path) {
-    return superblock_->GetAuxFsPath() + path;
+    std::string aux_path = superblock_->GetAuxFsPath();
+    if (!aux_path.empty() && aux_path[aux_path.size()] != '/' &&
+        !path.empty() && path[0] != '/') {
+      return aux_path + "/" + path;
+    }
+    return aux_path + path;
   }
 
   std::string ToZenFSPath(std::string aux_path) {
