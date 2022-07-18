@@ -68,9 +68,8 @@ class ZoneFsBackend : public ZonedBlockDeviceBackend {
   explicit ZoneFsBackend(std::string mountpoint);
   ~ZoneFsBackend();
 
-  IOStatus Open(bool readonly, bool exclusive, uint32_t *block_size,
-                uint64_t *zone_size, uint32_t *nr_zones,
-                unsigned int *max_active_zones, unsigned int *max_open_zones);
+  IOStatus Open(bool readonly, bool exclusive, unsigned int *max_active_zones,
+                unsigned int *max_open_zones);
   std::unique_ptr<ZoneList> ListZones();
   IOStatus Reset(uint64_t start, bool *offline, uint64_t *max_capacity);
   IOStatus Finish(uint64_t start);
