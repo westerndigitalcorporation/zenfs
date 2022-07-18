@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.4)
 
 set(zenfs_SOURCES "fs/fs_zenfs.cc" "fs/zbd_zenfs.cc" "fs/io_zenfs.cc" "fs/zonefs_zenfs.cc"
-    PARENT_SCOPE)
+    "fs/zbdlib_zenfs.cc" PARENT_SCOPE)
 set(zenfs_HEADERS "fs/fs_zenfs.h" "fs/zbd_zenfs.h" "fs/io_zenfs.h" "fs/version.h" "fs/metrics.h"
-    "fs/snapshot.h" "fs/filesystem_utility.h" "fs/zonefs_zenfs.h" PARENT_SCOPE)
+    "fs/snapshot.h" "fs/filesystem_utility.h" "fs/zonefs_zenfs.h" "fs/zbdlib_zenfs.h" PARENT_SCOPE)
 set(zenfs_LIBS "zbd" PARENT_SCOPE)
 set(zenfs_CMAKE_EXE_LINKER_FLAGS "-u zenfs_filesystems_reg" PARENT_SCOPE)
 
