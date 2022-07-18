@@ -130,7 +130,7 @@ class ZonedBlockDeviceBackend {
   uint32_t GetBlockSize() { return block_sz_; };
   uint64_t GetZoneSize() { return zone_sz_; };
   uint32_t GetNrZones() { return nr_zones_; };
-  virtual ~ZonedBlockDeviceBackend() = 0;
+  virtual ~ZonedBlockDeviceBackend(){};
 };
 
 enum class ZbdBackendType {
