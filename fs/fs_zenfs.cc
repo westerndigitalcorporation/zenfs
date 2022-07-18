@@ -11,6 +11,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <mntent.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -1436,7 +1437,6 @@ Status ZenFS::MkFS(std::string aux_fs_p, uint32_t finish_threshold) {
     return Status::InvalidArgument(
         "Aux filesystem path must be less than 256 bytes\n");
   }
-
   ClearFiles();
   IOStatus status = zbd_->ResetUnusedIOZones();
   if (!status.ok()) return status;
@@ -1557,8 +1557,49 @@ Status NewZenFS(FileSystem** fs, const ZbdBackendType backend_type,
   return Status::OK();
 }
 
-Status ListZenFileSystems(std::map<std::string, std::string>& out_list) {
-  std::map<std::string, std::string> zenFileSystems;
+Status AppendZenFileSystem(
+    std::string path, ZbdBackendType backend,
+    std::map<std::string, std::pair<std::string, ZbdBackendType>>& fs_map) {
+  std::unique_ptr<ZonedBlockDevice> zbd{
+      new ZonedBlockDevice(path, backend, nullptr)};
+  IOStatus zbd_status = zbd->Open(true, false);
+
+  if (zbd_status.ok()) {
+    std::vector<Zone*> metazones = zbd->GetMetaZones();
+    std::string scratch;
+    Slice super_record;
+    Status s;
+
+    for (const auto z : metazones) {
+      Superblock super_block;
+      std::unique_ptr<ZenMetaLog> log;
+      if (!z->Acquire()) {
+        return Status::Aborted("Could not aquire busy flag of zone" +
+                               std::to_string(z->GetZoneNr()));
+      }
+      log.reset(new ZenMetaLog(zbd.get(), z));
+
+      if (!log->ReadRecord(&super_record, &scratch).ok()) continue;
+      s = super_block.DecodeFrom(&super_record);
+      if (s.ok()) {
+        /* Map the uuid to the device-mapped (i.g dm-linear) block device to
+           avoid trying to mount the whole block device in case of a split
+           device */
+        if (fs_map.find(super_block.GetUUID()) != fs_map.end() &&
+            fs_map[super_block.GetUUID()].first.rfind("dm-", 0) == 0) {
+          break;
+        }
+        fs_map[super_block.GetUUID()] = std::make_pair(path, backend);
+        break;
+      }
+    }
+  }
+  return Status::OK();
+}
+
+Status ListZenFileSystems(
+    std::map<std::string, std::pair<std::string, ZbdBackendType>>& out_list) {
+  std::map<std::string, std::pair<std::string, ZbdBackendType>> zenFileSystems;
 
   auto closedirDeleter = [](DIR* d) {
     if (d != nullptr) closedir(d);
@@ -1569,42 +1610,23 @@ Status ListZenFileSystems(std::map<std::string, std::string>& out_list) {
 
   while (NULL != (entry = readdir(dir.get()))) {
     if (entry->d_type == DT_LNK) {
-      std::string zbdName = std::string(entry->d_name);
-      std::unique_ptr<ZonedBlockDevice> zbd{
-          new ZonedBlockDevice(zbdName, ZbdBackendType::kBlockDev, nullptr)};
-      IOStatus zbd_status = zbd->Open(true, false);
+      Status status =
+          AppendZenFileSystem(std::string(entry->d_name),
+                              ZbdBackendType::kBlockDev, zenFileSystems);
+      if (!status.ok()) return status;
+    }
+  }
 
-      if (zbd_status.ok()) {
-        std::vector<Zone*> metazones = zbd->GetMetaZones();
-        std::string scratch;
-        Slice super_record;
-        Status s;
+  struct mntent* mnt = NULL;
+  FILE* file = NULL;
 
-        for (const auto z : metazones) {
-          Superblock super_block;
-          std::unique_ptr<ZenMetaLog> log;
-          if (!z->Acquire()) {
-            return Status::Aborted("Could not aquire busy flag of zone" +
-                                   std::to_string(z->GetZoneNr()));
-          }
-          log.reset(new ZenMetaLog(zbd.get(), z));
-
-          if (!log->ReadRecord(&super_record, &scratch).ok()) continue;
-          s = super_block.DecodeFrom(&super_record);
-          if (s.ok()) {
-            /* Map the uuid to the device-mapped (i.g dm-linear) block device to
-               avoid trying to mount the whole block device in case of a split
-               device */
-            if (zenFileSystems.find(super_block.GetUUID()) !=
-                    zenFileSystems.end() &&
-                zenFileSystems[super_block.GetUUID()].rfind("dm-", 0) == 0) {
-              break;
-            }
-            zenFileSystems[super_block.GetUUID()] = zbdName;
-            break;
-          }
-        }
-        continue;
+  file = setmntent("/proc/mounts", "r");
+  if (file != NULL) {
+    while ((mnt = getmntent(file)) != NULL) {
+      if (!strcmp(mnt->mnt_type, "zonefs")) {
+        Status status = AppendZenFileSystem(
+            std::string(mnt->mnt_dir), ZbdBackendType::kZoneFS, zenFileSystems);
+        if (!status.ok()) return status;
       }
     }
   }
@@ -1793,7 +1815,8 @@ FactoryFunc<FileSystem> zenfs_filesystem_reg =
               *errmsg = s.ToString();
             }
           } else if (devID.rfind("uuid:") == 0) {
-            std::map<std::string, std::string> zenFileSystems;
+            std::map<std::string, std::pair<std::string, ZbdBackendType>>
+                zenFileSystems;
             s = ListZenFileSystems(zenFileSystems);
             if (!s.ok()) {
               *errmsg = s.ToString();
@@ -1805,12 +1828,12 @@ FactoryFunc<FileSystem> zenfs_filesystem_reg =
               } else {
 
 #ifdef ZENFS_EXPORT_PROMETHEUS
-                s = NewZenFS(&fs, ZbdBackendType::kBlockDev,
-                             zenFileSystems[devID],
+                s = NewZenFS(&fs, zenFileSystems[devID].second,
+                             zenFileSystems[devID].first,
                              std::make_shared<ZenFSPrometheusMetrics>());
 #else
-                s = NewZenFS(&fs, ZbdBackendType::kBlockDev,
-                             zenFileSystems[devID]);
+                s = NewZenFS(&fs, zenFileSystems[devID].second,
+                             zenFileSystems[devID].first);
 #endif
                 if (!s.ok()) {
                   *errmsg = s.ToString();
@@ -1842,7 +1865,7 @@ Status NewZenFS(FileSystem** /*fs*/, const ZbdBackendType /*backend_type*/,
   return Status::NotSupported("Not built with ZenFS support\n");
 }
 std::map<std::string, std::string> ListZenFileSystems() {
-  std::map<std::string, std::string> zenFileSystems;
+  std::map<std::string, std::pair<std::string, ZbdBackendType>> zenFileSystems;
   return zenFileSystems;
 }
 }  // namespace ROCKSDB_NAMESPACE

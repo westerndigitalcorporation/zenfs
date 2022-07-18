@@ -454,6 +454,10 @@ Status NewZenFS(
     FileSystem** fs, const ZbdBackendType backend_type,
     const std::string& backend_name,
     std::shared_ptr<ZenFSMetrics> metrics = std::make_shared<NoZenFSMetrics>());
-Status ListZenFileSystems(std::map<std::string, std::string>& out_list);
+Status AppendZenFileSystem(
+    std::string path, ZbdBackendType backend,
+    std::map<std::string, std::pair<std::string, ZbdBackendType>>& fs_list);
+Status ListZenFileSystems(
+    std::map<std::string, std::pair<std::string, ZbdBackendType>>& out_list);
 
 }  // namespace ROCKSDB_NAMESPACE
