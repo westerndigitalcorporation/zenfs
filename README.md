@@ -61,10 +61,26 @@ echo deadline > /sys/class/block/<zoned block device>/queue/scheduler
 ## Creating a ZenFS file system
 
 Before ZenFS can be used in RocksDB, the file system metadata and superblock must be set up.
-This is done with the zenfs utility, using the mkfs command:
+This is done with the zenfs utility, using the mkfs command. A ZenFS filesystem can be created
+on either a raw zoned block device or on a zonefs filesystem on a zoned block device. For a raw
+zoned block device, the device is specified using `--zbd=<zoned block device>`:
 
 ```
 ./plugin/zenfs/util/zenfs mkfs --zbd=<zoned block device> --aux_path=<path to store LOG and LOCK files>
+```
+
+If using zonefs, the zonefs file system mountpoint is specified instead using `--zonefs=<zonefs mountpoint>`:
+
+```
+./plugin/zenfs/util/zenfs mkfs --zonefs=<zonefs mountpoint> --aux_path=<path to store LOG and LOCK files>
+```
+
+In general, all operations of the zenfs utility can target either a raw block device or a zonefs mountpoint.
+
+When using zonefs, the zonefs volumes should be mounted with the option "explicit-open":
+
+```
+sudo mount -o explicit-open <zoned block device> <zonefs mountpoint>
 ```
 
 ## ZenFS on-disk file formats
@@ -87,12 +103,17 @@ To migrate between different versions of the on-disk file format, use the zenfs 
 
 ```
 
+Likewise, it is possible to migrate between a raw zoned block device and a zonefs filesystem by using backup on one
+and restore on the other. One thing to be aware of is that for a given block device, zonefs will expose one zone less
+to zenfs as the zonefs formatting will consume one zone for the zonefs superblock.
+
 ## Testing with db_bench
 
 To instruct db_bench to use zenfs on a specific zoned block device, the --fs_uri parameter is used.
-The device name may be used by specifying `--fs_uri=zenfs://dev:<zoned block device name>` or by
-specifying a unique identifier for the created file system by specifying `--fs_uri=zenfs://uuid:<UUID>`.
-UUIDs can be listed using `./plugin/zenfs/util/zenfs ls-uuid`
+The device name may be used by specifying `--fs_uri=zenfs://dev:<zoned block device name>` for a raw
+block device, `--fs_uri=zenfs://zonefs:<zonefs mountpoint>` for a zonefs mountpoint or by specifying
+a unique identifier for the created file system by specifying `--fs_uri=zenfs://uuid:<UUID>`. UUIDs
+can be listed using `./plugin/zenfs/util/zenfs ls-uuid`
 
 ```
 ./db_bench --fs_uri=zenfs://dev:<zoned block device name> --benchmarks=fillrandom --use_direct_io_for_flush_and_compaction
@@ -105,7 +126,7 @@ If you want to use db_bench for testing zenfs performance, there is a a convenie
 that runs the 'long' and 'quick' performance test sets with a good set of parameters
 for the drive.
 
-`cd tests; ./zenfs_base_performance.sh <zoned block device name>`
+`cd tests; ./zenfs_base_performance.sh <zoned block device name> [ <zonefs mountpoint> ]`
 
 
 ## Crashtesting
