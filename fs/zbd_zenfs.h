@@ -99,8 +99,7 @@ class ZonedBlockDeviceBackend {
   uint32_t nr_zones_ = 0;
 
  public:
-  virtual IOStatus Open(bool readonly, bool exclusive, uint32_t *block_size,
-                        uint64_t *zone_size, uint32_t *nr_zones,
+  virtual IOStatus Open(bool readonly, bool exclusive,
                         unsigned int *max_active_zones,
                         unsigned int *max_open_zones) = 0;
 
@@ -128,6 +127,9 @@ class ZonedBlockDeviceBackend {
   virtual uint64_t ZoneWp(std::unique_ptr<ZoneList> &zones,
                           unsigned int idx) = 0;
   virtual std::string GetFilename() = 0;
+  uint32_t GetBlockSize() { return block_sz_; };
+  uint64_t GetZoneSize() { return zone_sz_; };
+  uint32_t GetNrZones() { return nr_zones_; };
   virtual ~ZonedBlockDeviceBackend() = 0;
 };
 
@@ -139,9 +141,6 @@ enum class ZbdBackendType {
 class ZonedBlockDevice {
  private:
   std::unique_ptr<ZonedBlockDeviceBackend> zbd_be_;
-  uint32_t block_sz_;
-  uint64_t zone_sz_;
-  uint32_t nr_zones_;
   std::vector<Zone *> io_zones;
   std::vector<Zone *> meta_zones;
   time_t start_time_;
@@ -198,8 +197,8 @@ class ZonedBlockDevice {
   void LogZoneUsage();
   void LogGarbageInfo();
 
-  uint64_t GetZoneSize() { return zone_sz_; }
-  uint32_t GetNrZones() { return nr_zones_; }
+  uint64_t GetZoneSize();
+  uint32_t GetNrZones();
   std::vector<Zone *> GetMetaZones() { return meta_zones; }
 
   void SetFinishTreshold(uint32_t threshold) { finish_threshold_ = threshold; }

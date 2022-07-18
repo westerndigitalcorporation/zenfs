@@ -64,9 +64,8 @@ class ZbdlibBackend : public ZonedBlockDeviceBackend {
     zbd_close(write_f_);
   }
 
-  IOStatus Open(bool readonly, bool exclusive, uint32_t *block_size,
-                uint64_t *zone_size, uint32_t *nr_zones,
-                unsigned int *max_active_zones, unsigned int *max_open_zones);
+  IOStatus Open(bool readonly, bool exclusive, unsigned int *max_active_zones,
+                unsigned int *max_open_zones);
   std::unique_ptr<ZoneList> ListZones();
   IOStatus Reset(uint64_t start, bool *offline, uint64_t *max_capacity);
   IOStatus Finish(uint64_t start);
@@ -158,8 +157,7 @@ IOStatus ZbdlibBackend::CheckScheduler() {
 }
 
 IOStatus ZbdlibBackend::Open(bool readonly, bool exclusive,
-                             uint32_t *block_size, uint64_t *zone_size,
-                             uint32_t *nr_zones, unsigned int *max_active_zones,
+                             unsigned int *max_active_zones,
                              unsigned int *max_open_zones) {
   zbd_info info;
 
@@ -200,9 +198,9 @@ IOStatus ZbdlibBackend::Open(bool readonly, bool exclusive,
   IOStatus ios = CheckScheduler();
   if (ios != IOStatus::OK()) return ios;
 
-  *block_size = block_sz_ = info.pblock_size;
-  *zone_size = zone_sz_ = info.zone_size;
-  *nr_zones = nr_zones_ = info.nr_zones;
+  block_sz_ = info.pblock_size;
+  zone_sz_ = info.zone_size;
+  nr_zones_ = info.nr_zones;
   *max_active_zones = info.max_nr_active_zones;
   *max_open_zones = info.max_nr_open_zones;
   return IOStatus::OK();
@@ -391,7 +389,8 @@ inline IOStatus Zone::CheckRelease() {
 
 Zone *ZonedBlockDevice::GetIOZone(uint64_t offset) {
   for (const auto z : io_zones)
-    if (z->start_ <= offset && offset < (z->start_ + zone_sz_)) return z;
+    if (z->start_ <= offset && offset < (z->start_ + zbd_be_->GetZoneSize()))
+      return z;
   return nullptr;
 }
 
@@ -421,32 +420,31 @@ IOStatus ZonedBlockDevice::Open(bool readonly, bool exclusive) {
   if (!readonly && !exclusive)
     return IOStatus::InvalidArgument("Write opens must be exclusive");
 
-  IOStatus ios =
-      zbd_be_->Open(readonly, exclusive, &block_sz_, &zone_sz_, &nr_zones_,
-                    &max_nr_active_zones, &max_nr_open_zones);
+  IOStatus ios = zbd_be_->Open(readonly, exclusive, &max_nr_active_zones,
+                               &max_nr_open_zones);
   if (ios != IOStatus::OK()) return ios;
 
-  if (nr_zones_ < ZENFS_MIN_ZONES) {
+  if (zbd_be_->GetNrZones() < ZENFS_MIN_ZONES) {
     return IOStatus::NotSupported("To few zones on zoned backend (" +
                                   std::to_string(ZENFS_MIN_ZONES) +
                                   " required)");
   }
 
   if (max_nr_active_zones == 0)
-    max_nr_active_io_zones_ = nr_zones_;
+    max_nr_active_io_zones_ = zbd_be_->GetNrZones();
   else
     max_nr_active_io_zones_ = max_nr_active_zones - reserved_zones;
 
   if (max_nr_open_zones == 0)
-    max_nr_open_io_zones_ = nr_zones_;
+    max_nr_open_io_zones_ = zbd_be_->GetNrZones();
   else
     max_nr_open_io_zones_ = max_nr_open_zones - reserved_zones;
 
   Info(logger_, "Zone block device nr zones: %u max active: %u max open: %u \n",
-       nr_zones_, max_nr_active_zones, max_nr_open_zones);
+       zbd_be_->GetNrZones(), max_nr_active_zones, max_nr_open_zones);
 
   zone_rep = zbd_be_->ListZones();
-  if (zone_rep == nullptr || zone_rep->ZoneCount() != nr_zones_) {
+  if (zone_rep == nullptr || zone_rep->ZoneCount() != zbd_be_->GetNrZones()) {
     Error(logger_, "Failed to list zones");
     return IOStatus::IOError("Failed to list zones");
   }
@@ -1043,7 +1041,11 @@ IOStatus ZonedBlockDevice::AllocateIOZone(Env::WriteLifeTimeHint file_lifetime,
 
 std::string ZonedBlockDevice::GetFilename() { return zbd_be_->GetFilename(); }
 
-uint32_t ZonedBlockDevice::GetBlockSize() { return block_sz_; }
+uint32_t ZonedBlockDevice::GetBlockSize() { return zbd_be_->GetBlockSize(); }
+
+uint64_t ZonedBlockDevice::GetZoneSize() { return zbd_be_->GetZoneSize(); }
+
+uint32_t ZonedBlockDevice::GetNrZones() { return zbd_be_->GetNrZones(); }
 
 void ZonedBlockDevice::EncodeJsonZone(std::ostream &json_stream,
                                       const std::vector<Zone *> zones) {

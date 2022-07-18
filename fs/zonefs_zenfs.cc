@@ -156,8 +156,7 @@ unsigned int ZoneFsBackend::GetSysFsValue(std::string dev_name,
 
 IOStatus ZoneFsBackend::Open(bool readonly,
                              __attribute__((unused)) bool exclusive,
-                             uint32_t *block_size, uint64_t *zone_size,
-                             uint32_t *nr_zones, unsigned int *max_active_zones,
+                             unsigned int *max_active_zones,
                              unsigned int *max_open_zones) {
   struct stat zonefs_stat;
 
@@ -206,10 +205,6 @@ IOStatus ZoneFsBackend::Open(bool readonly,
   }
 
   wr_fds_.Resize(*max_active_zones);
-
-  *block_size = block_sz_;
-  *zone_size = zone_sz_;
-  *nr_zones = nr_zones_;
 
   readonly_ = readonly;
 
