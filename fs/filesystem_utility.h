@@ -65,8 +65,8 @@ class path {
     assert(segs[0] != "..");
 
     // We have a filename only if we don't have a terminator
-    bool has_terminator = *(--src_path_.end()) == '/';
-    if (!has_terminator) {
+    has_terminator_ = *(--src_path_.end()) == '/';
+    if (!has_terminator_) {
       filename_ = *(--segs.end());
     }
 
@@ -83,10 +83,10 @@ class path {
       //
       // `/a/b/c   ->  /a/b/ `
       // `/a/b/c/` ->  /a/b/c/ `
-      if (!has_terminator && i == segs.size() - 2) {
+      if (!has_terminator_ && i == segs.size() - 2) {
         parent_path_ = rst.str() + "/";
       }
-      if (!has_terminator && i == segs.size() - 1) {
+      if (!has_terminator_ && i == segs.size() - 1) {
         break;
       }
       rst << "/";
@@ -95,7 +95,7 @@ class path {
     normalized_path_ = rst.str();
     // If current source path is a directory, the parent path reminds the
     // same (@see std::filesystem::path::parent_path())
-    if (has_terminator) {
+    if (has_terminator_) {
       parent_path_ = normalized_path_;
     }
     return *this;
@@ -117,5 +117,6 @@ class path {
   std::string parent_path_;
   // @see std::filesystem::path::filename()
   std::string filename_;
+  bool has_terminator_ = false;
 };
 }  // namespace filesystem_utility
