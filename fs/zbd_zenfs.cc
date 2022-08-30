@@ -175,10 +175,10 @@ ZonedBlockDevice::ZonedBlockDevice(std::string path, ZbdBackendType backend,
                                    std::shared_ptr<ZenFSMetrics> metrics)
     : logger_(logger), metrics_(metrics) {
   if (backend == ZbdBackendType::kBlockDev) {
-    zbd_be_ = std::make_unique<ZbdlibBackend>(path);
+    zbd_be_ = std::unique_ptr<ZbdlibBackend>(new ZbdlibBackend(path));
     Info(logger_, "New Zoned Block Device: %s", zbd_be_->GetFilename().c_str());
   } else if (backend == ZbdBackendType::kZoneFS) {
-    zbd_be_ = std::make_unique<ZoneFsBackend>(path);
+    zbd_be_ = std::unique_ptr<ZoneFsBackend>(new ZoneFsBackend(path));
     Info(logger_, "New zonefs backing: %s", zbd_be_->GetFilename().c_str());
   }
 }

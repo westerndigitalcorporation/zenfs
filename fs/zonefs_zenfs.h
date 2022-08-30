@@ -12,6 +12,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <list>
 #include <map>
 #include <string>
 
