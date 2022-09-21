@@ -1514,6 +1514,11 @@ static std::string GetLogFilename(std::string bdev) {
 }
 #endif
 
+Status NewZenFS(FileSystem** fs, const std::string& bdevname,
+                std::shared_ptr<ZenFSMetrics> metrics) {
+  return NewZenFS(fs, ZbdBackendType::kBlockDev, bdevname, metrics);
+}
+
 Status NewZenFS(FileSystem** fs, const ZbdBackendType backend_type,
                 const std::string& backend_name,
                 std::shared_ptr<ZenFSMetrics> metrics) {

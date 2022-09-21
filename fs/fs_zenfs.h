@@ -451,6 +451,9 @@ class ZenFS : public FileSystemWrapper {
 #endif  // !defined(ROCKSDB_LITE) && defined(OS_LINUX)
 
 Status NewZenFS(
+    FileSystem** fs, const std::string& bdevname,
+    std::shared_ptr<ZenFSMetrics> metrics = std::make_shared<NoZenFSMetrics>());
+Status NewZenFS(
     FileSystem** fs, const ZbdBackendType backend_type,
     const std::string& backend_name,
     std::shared_ptr<ZenFSMetrics> metrics = std::make_shared<NoZenFSMetrics>());
