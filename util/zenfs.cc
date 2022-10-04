@@ -51,7 +51,7 @@ DEFINE_string(dest_file, "", "Destination file path");
 namespace ROCKSDB_NAMESPACE {
 
 void AddDirSeparatorAtEnd(std::string &path) {
-  if (path.back() != '/') path = path + "/";
+  if (path.empty() || path.back() != '/') path = path + "/";
 }
 
 std::unique_ptr<ZonedBlockDevice> zbd_open(bool readonly, bool exclusive) {
