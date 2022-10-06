@@ -175,7 +175,7 @@ int zenfs_tool_mkfs() {
   ZonedBlockDevice *zbdRaw = zbd.get();
   zenFS.reset(new ZenFS(zbd.release(), FileSystem::Default(), nullptr));
 
-  if (FLAGS_aux_path.back() != '/') FLAGS_aux_path.append("/");
+  AddDirSeparatorAtEnd(FLAGS_aux_path);
 
   s = zenFS->MkFS(FLAGS_aux_path, FLAGS_finish_threshold);
   if (!s.ok()) {
@@ -452,7 +452,7 @@ IOStatus zenfs_create_directories(FileSystem *fs, std::string path) {
   IOStatus s;
   std::size_t p = 0;
 
-  if (path.back() != '/') path += '/';
+  AddDirSeparatorAtEnd(path);
 
   while ((p = path.find_first_of('/', p)) != std::string::npos) {
     dir_name = path.substr(0, p++);
@@ -515,7 +515,7 @@ int zenfs_tool_backup() {
     }
 
     std::string backup_path = FLAGS_backup_path;
-    if (backup_path.size() > 0 && backup_path.back() != '/') backup_path += "/";
+    AddDirSeparatorAtEnd(backup_path);
     io_status = zenfs_tool_copy_dir(zenFS.get(), backup_path,
                                     FileSystem::Default().get(), FLAGS_path);
   }
