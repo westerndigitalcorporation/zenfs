@@ -628,7 +628,7 @@ IOStatus ZoneFile::RecoverSparseExtents(uint64_t start, uint64_t end,
 
     extent_length = DecodeFixed64(buffer);
     if (extent_length == 0) {
-      s = IOStatus::IOError("Unexexpeted extent length while recovering");
+      s = IOStatus::IOError("Unexpected extent length while recovering");
       break;
     }
     recovered_segments++;
