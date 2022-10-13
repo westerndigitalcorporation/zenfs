@@ -1396,8 +1396,10 @@ Status ZenFS::Mount(bool readonly) {
     }
   }
 
-  s = Repair();
-  if (!s.ok()) return s;
+  if (!readonly) {
+    s = Repair();
+    if (!s.ok()) return s;
+  }
 
   if (readonly) {
     Info(logger_, "Mounting READ ONLY");
