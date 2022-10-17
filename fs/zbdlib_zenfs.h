@@ -40,6 +40,7 @@ class ZbdlibBackend : public ZonedBlockDeviceBackend {
   IOStatus Close(uint64_t start);
   int Read(char *buf, int size, uint64_t pos, bool direct);
   int Write(char *data, uint32_t size, uint64_t pos);
+  int InvalidateCache(uint64_t pos, uint64_t size);
 
   bool ZoneIsSwr(std::unique_ptr<ZoneList> &zones, unsigned int idx) {
     struct zbd_zone *z = &((struct zbd_zone *)zones->GetData())[idx];

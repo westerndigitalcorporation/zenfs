@@ -325,6 +325,38 @@ ZoneExtent* ZoneFile::GetExtent(uint64_t file_offset, uint64_t* dev_offset) {
   return NULL;
 }
 
+IOStatus ZoneFile::InvalidateCache(uint64_t pos, uint64_t size) {
+  ReadLock lck(this);
+  uint64_t offset = pos;
+  uint64_t left = size;
+  IOStatus s = IOStatus::OK();
+
+  if (left == 0) {
+    left = GetFileSize();
+  }
+
+  while (left) {
+    uint64_t dev_offset;
+    ZoneExtent* extent = GetExtent(offset, &dev_offset);
+
+    if (!extent) {
+      s = IOStatus::IOError("Extent not found while invalidating cache");
+      break;
+    }
+
+    uint64_t extent_end = extent->start_ + extent->length_;
+    uint64_t invalidate_size = std::min(left, extent_end - dev_offset);
+
+    s = zbd_->InvalidateCache(dev_offset, invalidate_size);
+    if (!s.ok()) break;
+
+    left -= invalidate_size;
+    offset += invalidate_size;
+  }
+
+  return s;
+}
+
 IOStatus ZoneFile::PositionedRead(uint64_t offset, size_t n, Slice* result,
                                   char* scratch, bool direct) {
   ZenFSMetricsLatencyGuard guard(zbd_->GetMetrics(), ZENFS_READ_LATENCY,

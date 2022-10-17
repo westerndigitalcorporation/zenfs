@@ -110,6 +110,7 @@ class ZonedBlockDeviceBackend {
   virtual IOStatus Close(uint64_t start) = 0;
   virtual int Read(char *buf, int size, uint64_t pos, bool direct) = 0;
   virtual int Write(char *data, uint32_t size, uint64_t pos) = 0;
+  virtual int InvalidateCache(uint64_t pos, uint64_t size) = 0;
   virtual bool ZoneIsSwr(std::unique_ptr<ZoneList> &zones,
                          unsigned int idx) = 0;
   virtual bool ZoneIsOffline(std::unique_ptr<ZoneList> &zones,
@@ -215,6 +216,7 @@ class ZonedBlockDevice {
   void GetZoneSnapshot(std::vector<ZoneSnapshot> &snapshot);
 
   int Read(char *buf, uint64_t offset, int n, bool direct);
+  IOStatus InvalidateCache(uint64_t pos, uint64_t size);
 
   IOStatus ReleaseMigrateZone(Zone *zone);
 

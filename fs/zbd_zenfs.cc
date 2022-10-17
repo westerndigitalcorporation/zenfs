@@ -647,6 +647,15 @@ IOStatus ZonedBlockDevice::AllocateEmptyZone(Zone **zone_out) {
   return IOStatus::OK();
 }
 
+IOStatus ZonedBlockDevice::InvalidateCache(uint64_t pos, uint64_t size) {
+  int ret = zbd_be_->InvalidateCache(pos, size);
+
+  if (ret) {
+    return IOStatus::IOError("Failed to invalidate cache");
+  }
+  return IOStatus::OK();
+}
+
 int ZonedBlockDevice::Read(char *buf, uint64_t offset, int n, bool direct) {
   int ret = 0;
   int left = n;

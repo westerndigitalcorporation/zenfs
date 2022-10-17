@@ -167,6 +167,10 @@ IOStatus ZbdlibBackend::Close(uint64_t start) {
   return IOStatus::OK();
 }
 
+int ZbdlibBackend::InvalidateCache(uint64_t pos, uint64_t size) {
+  return posix_fadvise(read_f_, pos, size, POSIX_FADV_DONTNEED);
+}
+
 int ZbdlibBackend::Read(char *buf, int size, uint64_t pos, bool direct) {
   return pread(direct ? read_direct_f_ : read_f_, buf, size, pos);
 }

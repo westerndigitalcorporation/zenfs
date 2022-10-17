@@ -301,6 +301,15 @@ IOStatus ZoneFsBackend::Close(uint64_t start) {
   return IOStatus::OK();
 }
 
+int ZoneFsBackend::InvalidateCache(uint64_t pos, uint64_t size) {
+  uint64_t offset = LBAToZoneOffset(pos);
+
+  std::shared_ptr<ZoneFsFile> file = GetZoneFile(pos, O_RDONLY);
+  if (file == nullptr) return -EINVAL;
+
+  return posix_fadvise(file->GetFd(), offset, size, POSIX_FADV_DONTNEED);
+}
+
 int ZoneFsBackend::Read(char *buf, int size, uint64_t pos, bool direct) {
   int flags = direct ? O_RDONLY | O_DIRECT : O_RDONLY;
   uint64_t offset = LBAToZoneOffset(pos);
