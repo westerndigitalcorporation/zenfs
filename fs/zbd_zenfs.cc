@@ -356,8 +356,14 @@ void ZonedBlockDevice::LogGarbageInfo() {
       continue;
     }
 
-    double garbage_rate =
-        double(z->wp_ - z->start_ - z->used_capacity_) / z->max_capacity_;
+    double garbage_rate = 0;
+    if (z->IsFull()) {
+      garbage_rate =
+          double(z->max_capacity_ - z->used_capacity_) / z->max_capacity_;
+    } else {
+      garbage_rate =
+          double(z->wp_ - z->start_ - z->used_capacity_) / z->max_capacity_;
+    }
     assert(garbage_rate > 0);
     int idx = int((garbage_rate + 0.1) * 10);
     zone_gc_stat[idx]++;
