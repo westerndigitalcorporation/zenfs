@@ -513,7 +513,6 @@ IOStatus ZonedBlockDevice::AllocateMetaZone(Zone **out_meta_zone) {
       }
     }
   }
-  assert(true);
   Error(logger_, "Out of metadata zones, we should go to read only now.");
   return IOStatus::NoSpace("Out of metadata zones");
 }
