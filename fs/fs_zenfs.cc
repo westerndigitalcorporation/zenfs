@@ -333,6 +333,19 @@ IOStatus ZenFS::Repair() {
   return IOStatus::OK();
 }
 
+void ZenFS::RebuildZoneLifeTime() {
+  std::map<std::string, std::shared_ptr<ZoneFile>>::iterator it;
+  for (it = files_.begin(); it != files_.end(); it++) {
+    std::shared_ptr<ZoneFile> zFile = it->second;
+    std::vector<ZoneExtent*> extents = zFile->GetExtents();
+    Env::WriteLifeTimeHint file_lifetime = zFile->GetWriteLifeTimeHint();
+    for (const auto* ext : extents) {
+      Zone* zone = ext->zone_;
+      if (zone->lifetime_ < file_lifetime) zone->lifetime_ = file_lifetime;
+    }
+  }
+}
+
 std::string ZenFS::FormatPathLexically(fs::path filepath) {
   fs::path ret = fs::path("/") / filepath.lexically_normal();
   return ret.string();
@@ -1470,6 +1483,8 @@ Status ZenFS::Mount(bool readonly) {
       return s;
     }
   }
+
+  RebuildZoneLifeTime();
 
   Info(logger_, "Superblock sequence %d", (int)superblock_->GetSeq());
   Info(logger_, "Finish threshold %u", superblock_->GetFinishTreshold());

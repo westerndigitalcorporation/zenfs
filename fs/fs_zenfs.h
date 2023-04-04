@@ -252,6 +252,8 @@ class ZenFS : public FileSystemWrapper {
 
   IOStatus Repair();
 
+  void RebuildZoneLifeTime();
+
   /* Must hold files_mtx_ */
   IOStatus DeleteDirRecursiveNoLock(const std::string& d,
                                     const IOOptions& options,
