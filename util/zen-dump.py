@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import cysimdjson
+import json
 import string
 from dataclasses import dataclass
 import sys
@@ -56,8 +56,7 @@ def file_symbol(id):
 def load_data(json_file):
     print("loading data...")
     with open(json_file, 'rb') as f:
-        parser = cysimdjson.JSONParser()
-        data = parser.parse(f.read())
+        data = json.loads(f.read())
     print("processing data...")
     return data
 
@@ -135,7 +134,7 @@ def cmd_files(data):
         extent_size = 0
         total_extents += len(file.extents)
         for extent in sorted(file.extents, key=lambda x: x["start"]):
-            while extent["start"] > last_zone.start + last_zone.max_capacity:
+            while extent["start"] >= last_zone.start + last_zone.max_capacity:
                 if extent_counter != 0:
                     print(
                         f"  Zone #{zone_id}: len(extents)={extent_counter} size={size_human(extent_size)}")
@@ -161,7 +160,7 @@ def cmd_extents(data):
         last_zone = zones[0]
         zone_id = 0
         for extent in sorted(file.extents, key=lambda x: x["start"]):
-            while extent["start"] > last_zone.start + last_zone.max_capacity:
+            while extent["start"] >= last_zone.start + last_zone.max_capacity:
                 zone_id += 1
                 last_zone = zones[zone_id]
             extent_list = extents_in_zone.get(zone_id, [])

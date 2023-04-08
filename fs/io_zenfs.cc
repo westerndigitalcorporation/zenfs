@@ -109,12 +109,22 @@ void ZoneFile::EncodeJson(std::ostream& json_stream) {
   json_stream << "\"id\":" << file_id_ << ",";
   json_stream << "\"size\":" << file_size_ << ",";
   json_stream << "\"hint\":" << lifetime_ << ",";
-  json_stream << "\"extents\":[";
-
-  for (const auto& name : GetLinkFiles())
-    json_stream << "\"filename\":\"" << name << "\",";
+  json_stream << "\"filename\":[";
 
   bool first_element = true;
+  for (const auto& name : GetLinkFiles()) {
+    if (first_element) {
+      first_element = false;
+    } else {
+      json_stream << ",";
+    }
+    json_stream << "\"" << name << "\"";
+  }
+  json_stream << "],";
+
+  json_stream << "\"extents\":[";
+
+  first_element = true;
   for (ZoneExtent* extent : extents_) {
     if (first_element) {
       first_element = false;
