@@ -33,7 +33,7 @@ Then, we could analyze the json file. Python 3.9+ is required, and we need to
 install some packages.
 
 ```bash
-pip3 install hurry.filesize cysimdjson cython tqdm -U
+pip3 install hurry.filesize cython tqdm -U
 ./zen-dump.py extents
 ```
 
