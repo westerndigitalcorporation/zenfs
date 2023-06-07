@@ -33,7 +33,7 @@ namespace ROCKSDB_NAMESPACE {
 
 class ZonedBlockDevice;
 class ZoneSnapshot;
-class ZenFSSnapshotOptions;
+struct ZenFSSnapshotOptions;
 
 class Zone {
   ZonedBlockDevice *zbd_;

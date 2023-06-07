@@ -35,7 +35,6 @@ class ZBDSnapshot {
 
  public:
   ZBDSnapshot() = default;
-  ZBDSnapshot(const ZBDSnapshot&) = default;
   ZBDSnapshot(ZonedBlockDevice& zbd)
       : free_space(zbd.GetFreeSpace()),
         used_space(zbd.GetUsedSpace()),

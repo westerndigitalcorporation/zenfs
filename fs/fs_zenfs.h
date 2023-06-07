@@ -25,7 +25,7 @@ namespace ROCKSDB_NAMESPACE {
 class ZoneSnapshot;
 class ZoneFileSnapshot;
 class ZenFSSnapshot;
-class ZenFSSnapshotOptions;
+struct ZenFSSnapshotOptions;
 
 class Superblock {
   uint32_t magic_ = 0;
