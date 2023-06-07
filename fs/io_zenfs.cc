@@ -617,7 +617,6 @@ IOStatus ZoneFile::RecoverSparseExtents(uint64_t start, uint64_t end,
   int f = zbd_->GetReadFD();
   uint64_t next_extent_start = start;
   char* buffer;
-  int recovered_segments = 0;
   int ret;
 
   ret = posix_memalign((void**)&buffer, sysconf(_SC_PAGESIZE), block_sz);
@@ -639,7 +638,6 @@ IOStatus ZoneFile::RecoverSparseExtents(uint64_t start, uint64_t end,
       s = IOStatus::IOError("Unexexpeted extent length while recovering");
       break;
     }
-    recovered_segments++;
 
     zone->used_capacity_ += extent_length;
     extents_.push_back(new ZoneExtent(next_extent_start + SPARSE_HEADER_SIZE,

@@ -36,7 +36,7 @@ namespace ROCKSDB_NAMESPACE {
 
 class ZenFSMetricsGuard;
 class ZenFSSnapshot;
-class ZenFSSnapshotOptions;
+struct ZenFSSnapshotOptions;
 
 // Types of Reporter that may be used for statistics.
 enum ZenFSMetricsReporterType : uint32_t {
