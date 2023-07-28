@@ -164,9 +164,11 @@ inline IOStatus Zone::CheckRelease() {
 }
 
 Zone *ZonedBlockDevice::GetIOZone(uint64_t offset) {
-  for (const auto z : io_zones)
-    if (z->start_ <= offset && offset < (z->start_ + zbd_be_->GetZoneSize()))
-      return z;
+  uint64_t zone_sz=zbd_be_->GetZoneSize();
+  size_t zone_idx=offset/zone_sz - ZENFS_META_ZONES;
+  if(io_zones.size()>zone_idx){
+    return io_zones[zone_idx];
+  }
   return nullptr;
 }
 
