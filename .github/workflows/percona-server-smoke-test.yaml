@@ -22,7 +22,7 @@ jobs:
       - name: Build docker image
         run: cd harness && st -o logs/make-smoke -- make NO_VAGRANT=1 V=1 percona-debian-run 
       - name: Run smoke test
-        run: cd harness && st --silent -o logs/make-smoke -- disk-select --disk 1TB -- make NO_VAGRANT=1 PERCONA_SERVER_BASE=Percona-Server-8.0.28-19 ZENFS_BRANCH=${GITHUB_SHA} ZENFS_REPO=https://github.com/${GITHUB_REPOSITORY}.git results/percona-server-smoke.xml
+        run: cd harness && st --silent -o logs/make-smoke -- disk-select --disk 1TB -- make NO_VAGRANT=1 PERCONA_SERVER_BASE=Percona-Server-8.0.34-26 ZENFS_BRANCH=${GITHUB_SHA} ZENFS_REPO=https://github.com/${GITHUB_REPOSITORY}.git results/percona-server-smoke.xml
       - name: Collect Results
         run: cd harness && make NO_VAGRANT=1 upload 
         if: always()
