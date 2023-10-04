@@ -14,6 +14,8 @@ jobs:
           - main
           - 6.29.fb
           - 7.2.fb
+          - 7.10.fb
+          - 8.7.fb
     steps:
       - name: Clean
         run: rm -rf ${GITHUB_WORKSPACE}/*
