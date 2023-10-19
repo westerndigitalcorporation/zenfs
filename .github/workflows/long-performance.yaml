@@ -2,7 +2,7 @@
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 21 * * sun'
+    - cron: '0 22 * * sun'
 name: Long Performance Test
 jobs:
   long-performance:

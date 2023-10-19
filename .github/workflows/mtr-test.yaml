@@ -1,7 +1,7 @@
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 21 * * fri'
+    - cron: '0 22 * * fri'
 name: MTR Tests
 jobs:
   mtr-tests:
