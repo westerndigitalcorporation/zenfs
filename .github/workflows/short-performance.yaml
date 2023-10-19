@@ -2,7 +2,7 @@
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 21 * * *'
+    - cron: '0 22 * * *'
 name: Short Performance Test
 jobs:
   quick-performance:

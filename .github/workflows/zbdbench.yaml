@@ -2,7 +2,7 @@
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 21 * * sat'
+    - cron: '0 22 * * sat'
 name: ZBDBench
 jobs:
   zbdbench:
