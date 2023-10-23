@@ -520,7 +520,7 @@ int zenfs_tool_backup() {
     }
 
     std::string backup_path = FLAGS_backup_path;
-    AddDirSeparatorAtEnd(backup_path);
+    if (backup_path.size() > 0 && backup_path.back() != '/') backup_path += "/";
     io_status = zenfs_tool_copy_dir(zenFS.get(), backup_path,
                                     FileSystem::Default().get(), FLAGS_path);
   }
