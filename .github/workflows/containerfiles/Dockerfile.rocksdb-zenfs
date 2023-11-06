@@ -1,0 +1,90 @@
+FROM docker.io/ubuntu:20.04 AS builder
+
+RUN apt-get update \
+    && \
+    DEBIAN_FRONTEND=noninteractive \
+    DEBCONF_NONINTERACTIVE_SEEN=true \
+    apt-get install --yes --quiet=2 \
+    build-essential \
+    git \
+    pkg-config \
+    cmake \
+    autoconf \
+    autoconf-archive \
+    automake \
+    libtool \
+    libgflags-dev \
+    libsnappy-dev \
+    uuid-dev \
+    bison \
+    autopoint \
+    && apt-get clean
+
+ENV WORK_PATH=/rocks/work
+ENV INSTALL_PATH=/rocks/dest
+RUN mkdir -p $WORK_PATH
+RUN mkdir -p $INSTALL_PATH
+
+WORKDIR $WORK_PATH
+
+ARG LIBZBD_GIT_CHECKOUT
+RUN git clone --quiet --single-branch --branch master -n --quiet http://github.com/westerndigitalcorporation/libzbd.git \
+     && cd libzbd \
+     && git checkout $LIBZBD_GIT_CHECKOUT
+RUN cd libzbd && sh autogen.sh && ./configure --prefix=${INSTALL_PATH} && make install
+
+RUN git clone --depth 1 --single-branch --branch v2.37.2 https://github.com/util-linux/util-linux \
+    && cd util-linux \
+    && ./autogen.sh \
+    && ./configure --prefix=$INSTALL_PATH \
+    && make blkzone \
+    && install blkzone $INSTALL_PATH/bin
+
+COPY rocksdb rocksdb
+ARG ROCKSDB_DEBUG_LEVEL
+RUN cd rocksdb \
+    && DEBUG_LEVEL=$ROCKSDB_DEBUG_LEVEL \
+    ROCKSDB_PLUGINS=zenfs \
+    PREFIX=$INSTALL_PATH \
+    PKG_CONFIG_PATH=$INSTALL_PATH/lib/pkgconfig \
+    OBJ_DIR=/tmp/zenfs-build \
+    make -j$(nproc) db_bench db_stress ldb \
+    && DEBUG_LEVEL=$ROCKSDB_DEBUG_LEVEL \
+    ROCKSDB_PLUGINS=zenfs \
+    PREFIX=$INSTALL_PATH \
+    PKG_CONFIG_PATH=$INSTALL_PATH/lib/pkgconfig \
+    OBJ_DIR=/tmp/zenfs-build \
+    make -j$(nproc) install \
+    && install db_bench $INSTALL_PATH/bin \
+    && install db_stress $INSTALL_PATH/bin \
+    && install ldb $INSTALL_PATH/bin \
+    && cd plugin/zenfs/util \
+    && PKG_CONFIG_PATH=$INSTALL_PATH/lib/pkgconfig make \
+    && install zenfs $INSTALL_PATH/bin
+
+FROM docker.io/ubuntu:20.04
+RUN apt-get update \
+    && \
+    DEBIAN_FRONTEND=noninteractive \
+    DEBCONF_NONINTERACTIVE_SEEN=true \
+    apt-get install --yes --quiet=2 \
+    libgflags2.2 \
+    libsnappy1v5 \
+    python3 \
+    python3-distutils \
+    python3-matplotlib \
+    nvme-cli \
+    && apt-get clean
+
+ENV WORK_PATH=/rocks/work
+ENV INSTALL_PATH=/rocks/dest
+RUN mkdir -p $WORK_PATH
+RUN mkdir -p $INSTALL_PATH
+
+WORKDIR $WORK_PATH
+
+COPY --from=builder $INSTALL_PATH $INSTALL_PATH
+COPY --from=builder $WORK_PATH/rocksdb/plugin/zenfs/tests $INSTALL_PATH/zenfs/test
+
+ENV PATH="$INSTALL_PATH/bin:$PATH"
+ENV LD_LIBRARY_PATH="$INSTALL_PATH/lib"
