@@ -3,3 +3,5 @@ fs/*.o
 fs/*.cc.d
 tests/results
 fs/version.h
+examples/*.o
+examples/*.cc.d
