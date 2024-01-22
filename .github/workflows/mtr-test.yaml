@@ -1,3 +1,4 @@
+#TODO: make sure to run on 1TB zns drives -> look at disk-select option
 on:
   workflow_dispatch:
   schedule:
@@ -5,58 +6,111 @@ on:
 name: MTR Tests
 jobs:
   mtr-tests:
-    runs-on: self-hosted
+    runs-on: nvme-zns
     timeout-minutes: 1440
     steps:
       - name: Clean
         run: rm -rf ${GITHUB_WORKSPACE}/*
-      - name: Checkout build scripts
-        run: git clone ~/harness.git
-      - name: Checkout percona-server
-        uses: actions/checkout@v2
-        with:
-          repository: percona/percona-server
-          ref: release-8.0.30-22
-          path: harness/percona-context/percona-server
-          submodules: true
-      - name: Remove default zenfs
-        run: rm -r harness/percona-context/percona-server/storage/rocksdb/rocksdb_plugins/zenfs
-      - name: Checkout recent zenfs
-        uses: actions/checkout@v2
+
+      - name: Prepare zoned block devices
+        run: |
+          for i in $(seq 0 3)
+          do
+              DEV="ZBD$i"
+              if [ ! -b "/dev/${!DEV}" ]
+              then
+                echo "/dev/${!DEV} is not available for zenfs-mtr!"
+                exit 1
+              fi
+              echo deadline > /sys/block/${!DEV}/queue/scheduler
+          done
+
+      - name: Checkout zenfs
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          path: harness/percona-context/percona-server/storage/rocksdb/rocksdb_plugins/zenfs
+          path: zenfs
+
+      - name: Create build directory
+        run: |
+          mkdir -p percona-build-dir
+
+      - name: Create result directory
+        run: |
+          mkdir -p percona-results
+
+      - name: Build docker image
+        run: |
+          podman build --cgroup-manager cgroupfs \
+          -t percona-debian \
+          -f zenfs/.github/workflows/containerfiles/Dockerfile.percona-debian-build \
+          --build-arg PERCONA_SERVER_BASE=Percona-Server-8.0.34-26 \
+          --build-arg ZENFS_BRANCH=${GITHUB_SHA} \
+          --build-arg ZENFS_REPO=https://github.com/${GITHUB_REPOSITORY}.git \
+          .
+
       - name: Run MTR RocksDB test
         id: mtrTest1
-        run: cd harness && st --silent -o logs/makeMtrRocksdb -- disk-select --disk 1TB -- make NO_VAGRANT=1 RUN_ARGS="mtrRocksdbTest" results/zenfs-mtr.xml
+        run: |
+          podman run --rm -i --device /dev/$ZBD0 \
+          --volume ${GITHUB_WORKSPACE}/zenfs/.github/workflows/mtr:/scripts \
+          --workdir /scripts \
+          --env DEVICE0="$ZBD0" \
+          percona-debian \
+          bash wrapper.sh bash mtr-rocksdb-test.sh
         continue-on-error: true
-      - name: Collect MTR RocksDB results
-        run: cd harness && make NO_VAGRANT=1 upload
-        if: always()
+
       - name: Run MTR RocksDB replication test
         id: mtrTest2
-        run: cd harness && st --silent -o logs/makeMtrRocksdbReplication -- disk-select --disk 1TB --disk 1TB -- make NO_VAGRANT=1 RUN_ARGS="mtrRocksdbReplicationTest" results/zenfs-mtr.xml
+        run: |
+          podman run --rm -i --device /dev/$ZBD0 \
+          --device /dev/$ZBD1 \
+          --volume ${GITHUB_WORKSPACE}/zenfs/.github/workflows/mtr:/scripts \
+          --workdir /scripts \
+          --env DEVICE0="$ZBD0" \
+          --env DEVICE1="$ZBD1" \
+          percona-debian \
+          bash wrapper.sh bash mtr-rocksdb-replication-test.sh
         continue-on-error: true
-      - name: Collect MTR RocksDB replication results
-        run: cd harness && make NO_VAGRANT=1 upload
-        if: always()
+
       - name: Run MTR RocksDB parallel test
         id: mtrTest3
-        run: cd harness && st --silent -o logs/makeMtrRocksdbParallel -- disk-select --disk 1TB --disk 1TB --disk 1TB --disk 1TB -- make NO_VAGRANT=1 RUN_ARGS="mtrRocksdbParallelTest" results/zenfs-mtr.xml
+        run: |
+          podman run --rm -i --device /dev/$ZBD0 \
+          --device /dev/$ZBD1 \
+          --device /dev/$ZBD2 \
+          --device /dev/$ZBD3 \
+          --volume ${GITHUB_WORKSPACE}/zenfs/.github/workflows/mtr:/scripts \
+          --workdir /scripts \
+          --env DEVICE0="$ZBD0" \
+          --env DEVICE1="$ZBD1" \
+          --env DEVICE2="$ZBD2" \
+          --env DEVICE3="$ZBD3" \
+          percona-debian \
+          bash wrapper.sh bash mtr-rocksdb-parallel-test.sh
         continue-on-error: true
-      - name: Collect MTR RocksDB parallel results
-        run: cd harness && make NO_VAGRANT=1 upload
-        if: always()
+
       - name: Run MTR RocksDB parallel replication test
         id: mtrTest4
-        run: cd harness && st --silent -o logs/makeMtrRocksdbParallelReplication -- disk-select --disk 1TB --disk 1TB --disk 1TB --disk 1TB -- make NO_VAGRANT=1 RUN_ARGS="mtrRocksdbParallelReplicationTest" results/zenfs-mtr.xml
+        run: |
+          podman run --rm -i --device /dev/$ZBD0 \
+          --device /dev/$ZBD1 \
+          --device /dev/$ZBD2 \
+          --device /dev/$ZBD3 \
+          --volume ${GITHUB_WORKSPACE}/zenfs/.github/workflows/mtr:/scripts \
+          --workdir /scripts \
+          --env DEVICE0="$ZBD0" \
+          --env DEVICE1="$ZBD1" \
+          --env DEVICE2="$ZBD2" \
+          --env DEVICE3="$ZBD3" \
+          percona-debian \
+          bash wrapper.sh bash mtr-rocksdb-parallel-replication-test.sh
         continue-on-error: true
-      - name: Collect MTR RocksDB parallel replication results
-        run: cd harness && make NO_VAGRANT=1 upload
-        if: always()
+
       - name: Remove images
         run: podman image prune --force
         if: always()
+
       - name: Failure check
-        if: steps.mtrTest1.outcome != 'success' || steps.mtrTest2.outcome != 'success' || steps.mtrTest3.outcome != 'success' || steps.mtrTest4.outcome != 'success' 
+        if: steps.mtrTest1.outcome != 'success' || steps.mtrTest2.outcome != 'success' || steps.mtrTest3.outcome != 'success' || steps.mtrTest4.outcome != 'success'
         run: exit 1
