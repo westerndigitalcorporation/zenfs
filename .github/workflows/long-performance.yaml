@@ -7,38 +7,70 @@ name: Long Performance Test
 jobs:
   long-performance:
     name: Long Performance
-    runs-on: self-hosted
+    runs-on: nvme-zns
     timeout-minutes: 4320
     strategy:
       matrix:
+#TODO: Figure out a way to assign drive sizes -> maybe with env-vars?
         drive-size: [1TB]
     steps:
       - name: Clean
         run: rm -rf ${GITHUB_WORKSPACE}/*
-      - name: Checkout build scripts
-        run: git clone ~/harness.git
-      - name: Checkout zbdbench
-        uses: actions/checkout@v2
-        with:
-          repository: westerndigitalcorporation/zbdbench
-          ref: v0.1.1
-          path: harness/rocksdb-context/zbdbench
+
       - name: Checkout rocksdb
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           repository: facebook/rocksdb
           ref: v7.0.2
-          path: harness/rocksdb-context/rocksdb
+          path: rocksdb
+
       - name: Checkout zenfs
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          path: harness/rocksdb-context/rocksdb/plugin/zenfs
-      - name: Run long performance test ${{ matrix.drive-size }}
-        run: cd harness && st --silent -o logs/make -- disk-select --disk ${{ matrix.drive-size }} -- make NO_VAGRANT=1 results/zenfs-long.xml 
-      - name: Collect Results ${{ matrix.drive-size }}
-        run: cd harness && make NO_VAGRANT=1 upload 
+          path: rocksdb/plugin/zenfs
+
+      - name: Create results directory
+        run: |
+          mkdir -p results
+
+      - name: Build RocksDB docker image
+        run: |
+          podman build --cgroup-manager cgroupfs \
+          -t rocksdb-zenfs \
+          -f rocksdb/plugin/zenfs/.github/workflows/containerfiles/Dockerfile.rocksdb-zenfs \
+          --build-arg LIBZBD_GIT_CHECKOUT=v2.0.2 \
+          --build-arg ROCKSDB_DEBUG_LEVEL=0 \
+          .
+
+      - name: Set mq-deadline scheduler for the ZBD
+        run: |
+          echo deadline > /sys/block/${ZBD0}/queue/scheduler
+
+      - name: RocksDB mkfs zenfs
+        run: |
+          podman run --rm -i --device /dev/${ZBD0} \
+          rocksdb-zenfs \
+          bash -c "zenfs mkfs --zbd ${ZBD0} --aux_path /tmp/zenfs-aux --force"
+
+      - name: Run long performance test
+        run: |
+          podman run --rm -i --device /dev/${ZBD0} \
+          --volume ./results:/rocks/work/results:Z \
+          --security-opt unmask=/sys/dev/block \
+          rocksdb-zenfs \
+          bash -c "FS_PARAMS=--fs-uri=zenfs://dev:${ZBD0} PLUGIN_HOST=rocksdb TOOLS_DIR=/rocks/dest/bin ZENFS_DIR=/rocks/dest/bin OUTPUT_DIR=/rocks/work/results DB_BENCH_EXTRA_PARAMS=$(/rocks/dest/zenfs/test/get_good_db_bench_params_for_zenfs.sh ${ZBD0}) /rocks/dest/zenfs/test/run.sh rocksdb-zenfs-$(date '+%Y-%m-%d_%H-%M-%S' --utc)-$(uuidgen) long_performance"
+
+      - name: Archive long performance test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: long_performance
+          path: ./results
+
+      - name: Remove result dir
+        run: rm -rf results
         if: always()
+
       - name: Remove images
         run: podman rmi --force --all
         if: always()
