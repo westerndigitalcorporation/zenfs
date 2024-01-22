@@ -11,26 +11,61 @@ on:
 name: Percona Server Smoke Test
 jobs:
   smoke-test:
-    runs-on: self-hosted
+    runs-on: nvme-zns
     steps:
       - name: Clean
         run: rm -rf ${GITHUB_WORKSPACE}/*
-      - name: Checkout build scripts
-        run: git clone ~/harness.git
-      - name: Create context directory
-        run: cd harness && mkdir percona-context 
+
+      - name: Checkout zenfs for RocksDB
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: zenfs
+
+      - name: Create build directory
+        run: |
+          mkdir -p percona-build-dir
+
+      - name: Create result directory
+        run: |
+          mkdir -p percona-results
+
       - name: Build docker image
-        run: cd harness && st -o logs/make-smoke -- make NO_VAGRANT=1 V=1 percona-debian-run 
+        run: |
+          podman build --cgroup-manager cgroupfs \
+          -t percona-debian \
+          -f zenfs/.github/workflows/containerfiles/Dockerfile.percona-debian-build \
+          --build-arg PERCONA_SERVER_BASE=Percona-Server-8.0.34-26 \
+          --build-arg ZENFS_BRANCH=${GITHUB_SHA} \
+          --build-arg ZENFS_REPO=https://github.com/${GITHUB_REPOSITORY}.git \
+          .
+
+      - name: Set mq-deadline scheduler for the ZBD
+        run: |
+          echo deadline > /sys/block/${ZBD0}/queue/scheduler
+
       - name: Run smoke test
-        run: cd harness && st --silent -o logs/make-smoke -- disk-select --disk 1TB -- make NO_VAGRANT=1 PERCONA_SERVER_BASE=Percona-Server-8.0.34-26 ZENFS_BRANCH=${GITHUB_SHA} ZENFS_REPO=https://github.com/${GITHUB_REPOSITORY}.git results/percona-server-smoke.xml
-      - name: Collect Results
-        run: cd harness && make NO_VAGRANT=1 upload 
-        if: always()
+        run: |
+          podman run --rm -i --device /dev/${ZBD0} \
+          --volume ${GITHUB_WORKSPACE}/percona-results:/percona/work/results \
+          --volume ${GITHUB_WORKSPACE}/zenfs:/zenfs \
+          percona-debian \
+          bash /zenfs/.github/workflows/percona-server-smoke-test/zns_myrocks_zenfs_smoke.sh ${ZBD0}
+
       - name: Archive unofficial experimental percona-server deb packages
         uses: actions/upload-artifact@v3
         with:
           name: unofficial-experimental-zenfs-percona-server-deb-packages
-          path: harness/artifacts/unofficial-experimental-zenfs-percona-server-deb-packages.tgz
+          path: ./percona-results/unofficial-experimental-zenfs-percona-server-deb-packages.tgz
+
+      - name: Remove build dir
+        run: rm -rf percona-build-dir
+        if: always()
+
+      - name: Remove result dir
+        run: rm -rf percona-results
+        if: always()
+
       - name: Remove images
         run: podman rmi --force --all
         if: always()

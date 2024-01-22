@@ -1,0 +1,131 @@
+FROM docker.io/ubuntu:20.04 AS builder
+
+RUN apt-get update \
+    && \
+    DEBIAN_FRONTEND=noninteractive \
+    DEBCONF_NONINTERACTIVE_SEEN=true \
+    apt-get install --yes --quiet=2 \
+    build-essential \
+    git \
+    pkg-config \
+    cmake \
+    autoconf \
+    autoconf-archive \
+    automake \
+    libtool \
+    zlib1g-dev \
+    valgrind \
+    libssl-dev \
+    libncurses-dev \
+    libldap2-dev \
+    libreadline-dev \
+    libcurl4-openssl-dev \
+    libgflags-dev \
+    bison \
+    wget \
+    && apt-get clean
+
+ENV WORK_PATH=/percona/work
+ENV INSTALL_PATH=/percona/dest
+RUN mkdir -p $WORK_PATH
+RUN mkdir -p $INSTALL_PATH
+
+WORKDIR $WORK_PATH
+
+ARG PERCONA_SERVER_BASE
+ARG ZENFS_REPO
+ARG ZENFS_BRANCH
+RUN mkdir -p /tmp/BUILD_PS
+
+# Following the percona blog post to build the debian packages: https://www.percona.com/blog/2021/03/10/how-to-build-percona-server-for-mysql-from-sources/
+
+RUN wget https://raw.githubusercontent.com/percona/percona-server/8.0/build-ps/percona-server-8.0_builder.sh
+RUN sed -i 's=#!/bin/sh=#!/bin/bash=' percona-server-8.0_builder.sh
+RUN chmod +x percona-server-8.0_builder.sh
+ENV DEB_RELEASE_EXTRA=experimentalZenFS
+RUN ./percona-server-8.0_builder.sh --builddir=/tmp/BUILD_PS --install_deps=1 --with_zenfs=1 --deb_release=${DEB_RELEASE_EXTRA}
+# PERCONA_SERVER_BASE must have an origin in a Percona-Server-* tag.
+RUN ./percona-server-8.0_builder.sh --builddir=/tmp/BUILD_PS --get_sources=1 --branch=${PERCONA_SERVER_BASE} --with_zenfs=1 --zenfs_branch=${ZENFS_BRANCH} --zenfs_repo=${ZENFS_REPO} --deb_release=${DEB_RELEASE_EXTRA}
+RUN ./percona-server-8.0_builder.sh --builddir=/tmp/BUILD_PS --build_source_deb=1 --with_zenfs=1 --deb_release=${DEB_RELEASE_EXTRA}
+RUN ./percona-server-8.0_builder.sh --builddir=/tmp/BUILD_PS --build_deb=1 --with_zenfs=1 --deb_release=${DEB_RELEASE_EXTRA}
+
+ENV PATH="$INSTALL_PATH/bin:$PATH"
+ENV LD_LIBRARY_PATH="$INSTALL_PATH/lib"
+
+
+FROM docker.io/ubuntu:20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NONINTERACTIVE_SEEN=true
+
+RUN apt-get update \
+    && \
+    apt-get install --yes --quiet=2 \
+    zlib1g-dev \
+    valgrind \
+    libssl1.1 \
+    libncurses6 \
+    libncursesw6 \
+    libldap-2.4-2 \
+    libreadline8 \
+    libcurl4 \
+    libgflags2.2 \
+    perl \
+    curl \
+    lsb-release \
+    debsums \
+    dialog \
+    apt-utils \
+    libaio1 \
+    libmecab2 \
+    libnuma1 \
+    psmisc \
+    libjemalloc2 \
+    libjemalloc-dev \
+    python2 \
+    build-essential \
+    python-dev \
+    wget \
+    sudo \
+    automake \
+    libtool \
+    pkg-config \
+    libaio-dev \
+    git \
+    && apt-get clean
+
+RUN wget https://repo.percona.com/apt/pool/main/j/jemalloc/libjemalloc1_3.6.0-2.focal_amd64.deb
+RUN dpkg -i libjemalloc1_3.6.0-2.focal_amd64.deb
+
+ENV WORK_PATH=/percona/work/
+ENV INSTALL_PATH=/percona/dest
+ENV ZENFS_SOURCE_PATH=$INSTALL_PATH/zenfs
+RUN mkdir -p $WORK_PATH
+RUN mkdir -p $INSTALL_PATH
+RUN mkdir -p $ZENFS_SOURCE_PATH
+
+WORKDIR $WORK_PATH
+
+COPY --from=builder /tmp/BUILD_PS/*.deb $WORK_PATH
+COPY --from=builder /tmp/BUILD_PS/percona-server-*/storage/rocksdb/rocksdb_plugins/zenfs $ZENFS_SOURCE_PATH
+
+RUN dpkg -i *.deb
+
+RUN apt-get update \
+    && \
+    apt-get install --yes --quiet=2 \
+    libmysqlclient-dev \
+    libssl-dev \
+    python3-mysqldb \
+    && apt-get clean
+
+RUN git clone https://github.com/akopytov/sysbench.git \
+    && cd sysbench \
+    && ./autogen.sh \
+    && ./configure \
+    && make -j \
+    && make install \
+    && cd -
+
+ENV PATH="$INSTALL_PATH/bin:$PATH"
+ENV LD_LIBRARY_PATH="$INSTALL_PATH/lib"
