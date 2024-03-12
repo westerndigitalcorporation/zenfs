@@ -226,6 +226,11 @@ class ZonedWritableFile : public FSWritableFile {
   virtual IOStatus Fsync(const IOOptions& options,
                          IODebugContext* dbg) override;
 
+  uint64_t GetFileSize(const IOOptions& options, IODebugContext* dbg) {
+    (void)options;
+    (void)dbg;
+    return zoneFile_->GetFileSize();
+  }
   bool use_direct_io() const override { return !buffered; }
   bool IsSyncThreadSafe() const override { return true; };
   size_t GetRequiredBufferAlignment() const override {
