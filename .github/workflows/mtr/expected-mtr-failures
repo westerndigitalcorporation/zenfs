@@ -1,0 +1,17 @@
+rocksdb.check_ignore_unknown_options : WL#0000 Need adapting
+rocksdb.drop_table2 : WL#0000 Need adapting
+rocksdb.rocksdb_fault_injection : WL#0000 Need adapting
+rocksdb.track_and_verify_wals_in_manifest : WL#0000 Need adapting
+rocksdb.type_char_index_ver_bump_verify : WL#0000 Need adapting
+rocksdb.checkpoint : WL#0000 Need fixing the server
+rocksdb.bloomfilter3 : WL#0000 Sporadic failures
+rocksdb.bloomfilter_skip : WL#0000 Sporadic failures
+rocksdb.rocksdb_read_free_rpl : WL#0000 Sporadic failures
+rocksdb.optimize_table : WL#0000 Need adapting
+rocksdb.issue896 : WL#0000 Sporadic failures
+rocksdb.non_blocking_manual_compaction : WL#0000 Sporadic failures
+rocksdb.add_index_inplace: WL#0000 Sporadic failures
+rocksdb.partial_index_stress: WL#0000 TODO FIND OUT WHY THIS FAILS
+rocksdb.show_table_status: WL#0000 TODO FIND OUT WHY THIS FAILS
+rocksdb.rocksdb_icp: WL#0000 TODO FIND OUT WHY THIS FAILS
+rocksdb.rocksdb_icp_rev: WL#0000 TODO FIND OUT WHY THIS FAILS

@@ -1,0 +1,99 @@
+FROM docker.io/ubuntu:22.04 AS builder
+
+RUN apt-get update \
+    && \
+    DEBIAN_FRONTEND=noninteractive \
+    DEBCONF_NONINTERACTIVE_SEEN=true \
+    apt-get install --yes --quiet=2 \
+    build-essential \
+    git \
+    pkg-config \
+    cmake \
+    autoconf \
+    autoconf-archive \
+    automake \
+    libtool \
+    zlib1g-dev \
+    valgrind \
+    libssl-dev \
+    libncurses-dev \
+    libldap2-dev \
+    libreadline-dev \
+    libcurl4-openssl-dev \
+    libgflags-dev \
+    bison \
+    && apt-get clean
+
+ENV WORK_PATH=/percona/work
+ENV INSTALL_PATH=/percona/dest
+RUN mkdir -p $WORK_PATH
+RUN mkdir -p $INSTALL_PATH
+
+WORKDIR $WORK_PATH
+
+ARG LIBZBD_GIT_CHECKOUT
+RUN git clone --quiet --single-branch --branch master -n --quiet http://github.com/westerndigitalcorporation/libzbd.git \
+    && cd libzbd \
+    && git checkout $LIBZBD_GIT_CHECKOUT
+RUN cd libzbd && sh autogen.sh && ./configure --prefix=${INSTALL_PATH} && make install
+
+COPY percona-server percona-server
+RUN PKG_CONFIG_PATH=$INSTALL_PATH/lib/pkgconfig \
+    cmake ./percona-server \
+    -DUSE_VALGRIND=ON \
+    -DCMAKE_C_FLAGS="-mno-avx512f" \
+    -DCMAKE_CXX_FLAGS="-mno-avx512f" \
+    -DWITH_AUTHENTICATION_KERBEROS=OFF \
+    -DWITH_AUTHENTICATION_LDAP=OFF \
+    -DWITH_KERBEROS=none \
+    -DWITH_ROCKSDB=ON \
+    -DROCKSDB_PLUGINS=zenfs \
+    -DWITH_ZENFS_UTILITY=ON \
+    -DDOWNLOAD_BOOST=1\
+    -DWITH_BOOST=$WORK_PATH/boost \
+    -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} \
+    && make -j$(nproc) \
+    && make install
+
+FROM docker.io/ubuntu:22.04
+RUN apt-get update \
+    && \
+    DEBIAN_FRONTEND=noninteractive \
+    DEBCONF_NONINTERACTIVE_SEEN=true \
+    apt-get install --yes --quiet=2 \
+    build-essential \
+    zlib1g-dev \
+    valgrind \
+    libssl3 \
+    libssl-dev \
+    libncurses6 \
+    libncursesw6 \
+    libldap2-dev \
+    libreadline8 \
+    libcurl4 \
+    libgflags2.2 \
+    libmysqlclient-dev \
+    perl \
+    python3-dev \
+    python3-pip \
+    python-is-python3 \
+    pkg-config \
+    && apt-get clean
+
+ENV WORK_PATH=/percona/work
+ENV INSTALL_PATH=/percona/dest
+RUN mkdir -p $WORK_PATH
+RUN mkdir -p $INSTALL_PATH
+
+WORKDIR $WORK_PATH
+
+COPY --from=builder $INSTALL_PATH $INSTALL_PATH
+# Changeing access permissions of directories in $INSTALL_PATH is needed for the mysql-test-run.pl (see line 2415 and 3053)
+RUN find $INSTALL_PATH -type d -exec chmod 777 {} +
+RUN adduser --quiet --disabled-password mysql
+RUN apt-get update && apt-get install -y --quiet sudo 
+
+ENV PATH="$INSTALL_PATH/bin:$PATH"
+ENV LD_LIBRARY_PATH="$INSTALL_PATH/lib"
+
+RUN export MYSQLCLIENT_CFLAGS=$(pkg-config mysqlclient --cflags); export MYSQLCLIENT_LDFLAGS=$(pkg-config mysqlclient --libs); pip install mysqlclient;

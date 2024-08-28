@@ -5,35 +5,86 @@ name: Short Performance XFS Test
 jobs:
   short-performance-xfs:
     name: Short Performance XFS
-    runs-on: self-hosted
+    runs-on: nvme-zns
     timeout-minutes: 4320
     steps:
       - name: Clean
         run: rm -rf ${GITHUB_WORKSPACE}/*
-      - name: Checkout build scripts
-        run: git clone ~/harness.git
-      - name: Checkout zbdbench
-        uses: actions/checkout@v2
-        with:
-          repository: westerndigitalcorporation/zbdbench
-          ref: v0.1.1
-          path: harness/rocksdb-context/zbdbench
+
       - name: Checkout rocksdb
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           repository: facebook/rocksdb
           ref: v7.0.2
-          path: harness/rocksdb-context/rocksdb
+          path: rocksdb
+
       - name: Checkout zenfs
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          path: harness/rocksdb-context/rocksdb/plugin/zenfs
-      - name: Run short performance test 1TB
-        run: cd harness && st --silent -o logs/make -- sudo with-xfs --disk 1TB -- make NO_VAGRANT=1 results/xfs-short.xml 
-      - name: Collect Results
-        run: cd harness && make NO_VAGRANT=1 upload 
+          path: rocksdb/plugin/zenfs
+
+      - name: Create results directory
+        run: |
+          mkdir -p results
+
+      - name: Build RocksDB docker image
+        run: |
+          podman build --cgroup-manager cgroupfs \
+          -t rocksdb-zenfs \
+          -f rocksdb/plugin/zenfs/.github/workflows/containerfiles/Dockerfile.rocksdb-zenfs \
+          --build-arg LIBZBD_GIT_CHECKOUT=v2.0.2 \
+          --build-arg ROCKSDB_DEBUG_LEVEL=0 \
+          .
+
+      - name: Format conventional block device
+        run: |
+          sudo nvme format /dev/${BDEV0} -f --ses=1
+
+      - name: Create xfs on BDEV
+        run: |
+          sudo mkfs.xfs -f /dev/${BDEV0}
+
+      - name: Create xfs mountpoint
+        run: |
+          mkdir -p xfs-short-performance
+
+      - name: Mount BDEV to xfs mountpoint
+        run: |
+          sudo mount /dev/${BDEV0} xfs-short-performance
+
+      - name: Change back ownership of mountpoint
+        run: |
+          sudo chown $(id -u):$(id -g) xfs-short-performance
+
+      - name: Run short performance test
+        run: |
+          podman run --rm -i --device /dev/${ZBD0} \
+          --volume ./results:/rocks/work/results:Z \
+          --volume ./xfs-short-performance:/mnt/xfs:Z \
+          --security-opt unmask=/sys/dev/block \
+          rocksdb-zenfs \
+          bash -c "FS_PARAMS='--db=/mnt/xfs --target_file_size_base=4080218931 --use_direct_io_for_flush_and_compaction --max_bytes_for_level_multiplier=4 --max_background_jobs=8 --use_direct_reads --write_buffer_size=2147483648' PLUGIN_HOST=rocksdb TOOLS_DIR=/rocks/dest/bin ZENFS_DIR=/rocks/dest/bin OUTPUT_DIR=/rocks/work/results /rocks/dest/zenfs/test/run.sh rocksdb-xfs-$(date '+%Y-%m-%d_%H-%M-%S' --utc)-$(uuidgen) quick_performance"
+
+      - name: Archive short performance test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: quick_performance
+          path: ./results
         if: always()
+
+      - name: Remove result dir
+        run: rm -rf results
+        if: always()
+
+      - name: Umount xfs mountpoint
+        run: sudo umount -f xfs-short-performance
+        if: always()
+
+      - name: Remove xfs mountpoint
+        run: rm -rf xfs-short-performance
+        if: always()
+
       - name: Remove images
         run: podman rmi --force --all
         if: always()
