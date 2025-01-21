@@ -334,6 +334,7 @@ class ZenFS : public FileSystemWrapper {
 
   IOStatus GetFileSize(const std::string& f, const IOOptions& options,
                        uint64_t* size, IODebugContext* dbg) override;
+
   IOStatus RenameFile(const std::string& f, const std::string& t,
                       const IOOptions& options, IODebugContext* dbg) override;
 
