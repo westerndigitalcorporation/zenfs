@@ -125,6 +125,30 @@ can be listed using `./plugin/zenfs/util/zenfs ls-uuid`
 
 ```
 
+## Choosing a target file size
+
+ZenFS performs best when RocksDB's target file size is close to the zone
+capacity of the zoned block device. SST and WAL files then mostly fill up
+zones, so a zone can be reset as soon as its file is deleted, without being
+held back by data from other files.
+
+The zone capacity (in 512 byte sectors) is reported by `blkzone`:
+
+```
+blkzone report -c 1 /dev/<zoned block device name>
+```
+
+Set `target_file_size_base` (`--target_file_size_base` for db_bench) close to
+the zone capacity in bytes.
+
+The `tests/get_good_db_bench_params_for_zenfs.sh` script prints a good set of
+db_bench parameters for a given zoned block device, including a target file
+size derived from the zone capacity:
+
+```
+cd tests; ./get_good_db_bench_params_for_zenfs.sh <zoned block device name>
+```
+
 ## Performance testing
 
 If you want to use db_bench for testing zenfs performance, there is a a convenience script
