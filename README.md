@@ -8,6 +8,19 @@ conventional block devices. ZenFS ensures that there is no background
 garbage collection in the file system or on the disk, improving performance
 in terms of throughput, tail latencies and disk endurance.
 
+## Zoned XFS
+
+Starting with Linux 6.15, XFS supports zoned block devices natively, allowing
+unmodified RocksDB (and other applications) to use zoned storage through a
+general purpose file system. Zoned XFS implements smart data placement,
+co-locating data with similar life times in zones, and outperforms ZenFS in
+many RocksDB benchmarks.
+
+See the [XFS page on zonedstorage.io](https://zonedstorage.io/docs/filesystems/xfs)
+for how to set up zoned XFS, and the APSys '25 paper
+[Staying in the Zone - Retrofitting Zoned Storage into a Scalable Enterprise File System](https://doi.org/10.1145/3725783.3764399)
+for a description of its design and a performance comparison with ZenFS.
+
 ## Community
 For help or questions about zenfs usage (e.g. "how do I do X?") see below, on join us on [Matrix](https://app.element.io/#/room/#zonedstorage-general:matrix.org), or on [Slack](https://join.slack.com/t/zonedstorage/shared_invite/zt-uyfut5xe-nKajp9YRnEWqiD4X6RkTFw).
 
