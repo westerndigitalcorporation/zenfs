@@ -11,8 +11,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <libzbd/zbd.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 
 #include <fstream>
@@ -33,6 +35,19 @@ std::string ZbdlibBackend::ErrorToString(int err) {
   char *err_str = strerror(err);
   if (err_str != nullptr) return std::string(err_str);
   return "";
+}
+
+bool ZbdlibBackend::SchedulerCheckNeeded() {
+  struct utsname uts;
+  unsigned int major, minor;
+
+  if (uname(&uts) != 0 ||
+      sscanf(uts.release, "%u.%u", &major, &minor) != 2) {
+    return true;
+  }
+
+  /* Zone write plugging guarantees write ordering since Linux 6.10 */
+  return major < 6 || (major == 6 && minor < 10);
 }
 
 IOStatus ZbdlibBackend::CheckScheduler() {
@@ -98,8 +113,10 @@ IOStatus ZbdlibBackend::Open(bool readonly, bool exclusive,
     return IOStatus::NotSupported("Not a host managed block device");
   }
 
-  IOStatus ios = CheckScheduler();
-  if (ios != IOStatus::OK()) return ios;
+  if (SchedulerCheckNeeded()) {
+    IOStatus ios = CheckScheduler();
+    if (ios != IOStatus::OK()) return ios;
+  }
 
   block_sz_ = info.pblock_size;
   zone_sz_ = info.zone_size;

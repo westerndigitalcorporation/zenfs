@@ -85,6 +85,7 @@ class ZbdlibBackend : public ZonedBlockDeviceBackend {
   std::string GetFilename() { return filename_; }
 
  private:
+  bool SchedulerCheckNeeded();
   IOStatus CheckScheduler();
   std::string ErrorToString(int err);
 };
