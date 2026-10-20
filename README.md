@@ -51,12 +51,17 @@ $ popd
 
 ## Configure the IO Scheduler for the zoned block device
 
-The IO scheduler must be set to deadline to avoid writes from being reordered.
-This must be done every time the zoned name space is enumerated (e.g at boot).
+On kernels older than Linux 6.10, the IO scheduler must be set to deadline to
+avoid writes from being reordered. This must be done every time the zoned name
+space is enumerated (e.g at boot).
 
 ```
 echo deadline > /sys/class/block/<zoned block device>/queue/scheduler
 ```
+
+Starting with Linux 6.10, the block layer orders writes to sequential zones
+using zone write plugging, so setting the deadline scheduler is no longer
+required.
 
 ## Creating a ZenFS file system
 
